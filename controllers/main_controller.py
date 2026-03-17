@@ -8,9 +8,11 @@ except Exception:
     _HAS_PYSTRAY = False
 
 import tkinter.filedialog as filedialog
+import webbrowser
 from PIL import Image, ImageDraw, ImageFont
 from models.system_monitor import Model_4n4lyz3r
 from models.report_generator import ReportGenerator
+from models.update_checker import OTAUpdateChecker
 from views.main_window import View_4n4lyz3r
 from views.mini_widget import MiniWidget_4n4lyz3r
 from utils.logger import Logger_4n4lyz3r
@@ -65,6 +67,24 @@ class Controller_4n4lyz3r:
         threading.Thread(target=self.poll_2s, daemon=True).start()
         threading.Thread(target=self.poll_5s, daemon=True).start()
         threading.Thread(target=self.poll_10s, daemon=True).start()
+
+        # Schedule the OTA Update Checker (Runs ONCE 5 seconds after launch)
+        threading.Timer(5.0, self.check_for_ota_updates).start()
+
+    def check_for_ota_updates(self):
+        """Pings the GitHub API for newer releases silently."""
+        has_update, tag, url = OTAUpdateChecker.check_for_updates()
+
+        if has_update:
+            msg = f"Update Available: {tag} is out!"
+            self.logger.log_info(f"OTA Update Detected: {tag} -> {url}")
+
+            def _notify_update():
+                self.view.show_toast(msg)
+                # Show dynamic update button in header
+                self.view.show_update_button(url)
+
+            self.view.after(0, _notify_update)
 
     def poll_1s(self):
         """CPU, Network, Temp, Fan - every 1 second"""

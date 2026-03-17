@@ -37,6 +37,12 @@ class View_4n4lyz3r(ctk.CTk):
         )
         self.battery_label.pack(side="right", padx=(10, 0), pady=10, ipadx=10, ipady=5)
 
+        # Update Available Button (Hidden by default, shown by controller)
+        self.btn_update = ctk.CTkButton(
+            self.header_frame, text="🚀 UPDATE AVAILABLE", width=120, height=28,
+            fg_color="#FF4444", text_color="#FFFFFF", hover_color="#CC0000"
+        )
+
         # PIP / Mini-Widget Button
         self.pip_button = ctk.CTkButton(
             self.header_frame, text="⛶ PIP Mode", width=80, height=28,
@@ -199,6 +205,12 @@ class View_4n4lyz3r(ctk.CTk):
     def hide_toast(self):
         """Hides the toast notification."""
         self.toast_frame.place_forget()
+
+    def show_update_button(self, url):
+        """Dynamically unhides the update button and binds the browser launch."""
+        import webbrowser
+        self.btn_update.configure(command=lambda: webbrowser.open(url))
+        self.btn_update.pack(side="right", padx=(10, 0), pady=10)
 
     def update_ui(self, metrics):
         """
