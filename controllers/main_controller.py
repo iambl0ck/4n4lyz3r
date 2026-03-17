@@ -14,6 +14,7 @@ from models.system_monitor import Model_4n4lyz3r
 from models.report_generator import ReportGenerator
 from models.update_checker import OTAUpdateChecker
 from models.fleet_manager import FleetManagerPoller
+from models.ai_auditor import AIAuditor
 from views.main_window import View_4n4lyz3r
 from views.mini_widget import MiniWidget_4n4lyz3r
 from utils.logger import Logger_4n4lyz3r
@@ -58,6 +59,8 @@ class Controller_4n4lyz3r:
         self.view.cmd_kill_process = self.handle_kill_process
         self.view.cmd_suspend_process = self.handle_suspend_process
         self.view.cmd_add_fleet_node = self.handle_add_fleet_node
+        self.view.cmd_save_ai_key = self.handle_save_ai_key
+        self.view.cmd_ai_audit = self.handle_ai_audit
         self.view.btn_export.configure(command=self.handle_export_report)
 
         # Setup View static data
@@ -394,6 +397,37 @@ class Controller_4n4lyz3r:
             self.view.show_toast("Fleet Node Added!")
         else:
             self.view.show_toast(msg)
+
+    def handle_save_ai_key(self, key):
+        """Saves the AI API key to the config."""
+        self.config.set_ai_api_key(key)
+        self.view.show_toast("AI API Key Saved!")
+
+    def handle_ai_audit(self):
+        """Triggers the background AI Audit and updates the text box when complete."""
+        api_key = self.config.get_ai_api_key()
+
+        with self.metrics_lock:
+            snapshot = self.model.generate_snapshot(self.metrics)
+
+        def _run_audit():
+            success, msg = AIAuditor.audit_snapshot(api_key, snapshot)
+
+            def _update_ui():
+                self.view.txt_ai_output.configure(state="normal")
+                self.view.txt_ai_output.delete("0.0", "end")
+                self.view.txt_ai_output.insert("0.0", msg)
+                self.view.txt_ai_output.configure(state="disabled")
+                self.view.btn_ai_audit.configure(state="normal", text="🤖 Analyze with AI")
+
+                if success:
+                    self.logger.log_info("AI Audit Complete.")
+                else:
+                    self.logger.log_error(msg)
+
+            self.view.after(0, _update_ui)
+
+        threading.Thread(target=_run_audit, daemon=True).start()
 
     def on_closing(self, icon=None, item=None):
         """Gracefully shuts down the application and background threads."""

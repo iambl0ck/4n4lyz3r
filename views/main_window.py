@@ -60,11 +60,14 @@ class View_4n4lyz3r(ctk.CTk):
         self.tab_defense = self.tabview.add("Active Defense")
         self.tab_hw = self.tabview.add("Deep Specs")
         self.tab_fleet = self.tabview.add("Fleet")
+        self.tab_settings = self.tabview.add("Settings")
 
         # Callbacks (assigned by controller)
         self.cmd_kill_process = None
         self.cmd_suspend_process = None
         self.cmd_add_fleet_node = None
+        self.cmd_save_ai_key = None
+        self.cmd_ai_audit = None
 
         # Dashboard Tab Content Frame
         self.content_frame = ctk.CTkFrame(self.tab_dashboard, fg_color="transparent")
@@ -183,11 +186,22 @@ class View_4n4lyz3r(ctk.CTk):
         # Export Actions Frame
         self.actions_frame = ctk.CTkFrame(self.hw_frame, fg_color="transparent")
         self.actions_frame.pack(fill="x", padx=20, pady=20)
+
         self.btn_export = ctk.CTkButton(
             self.actions_frame, text="Export System Report", font=("Helvetica", 14, "bold"),
             fg_color="#00FFAA", text_color="#121212", hover_color="#00CC88"
         )
-        self.btn_export.pack(pady=10)
+        self.btn_export.pack(side="left", padx=10)
+
+        self.btn_ai_audit = ctk.CTkButton(
+            self.actions_frame, text="🤖 Analyze with AI", font=("Helvetica", 14, "bold"),
+            fg_color="#9900FF", text_color="#FFFFFF", hover_color="#7A00CC", command=self._handle_ai_audit
+        )
+        self.btn_ai_audit.pack(side="left", padx=10)
+
+        # AI Audit Output Area
+        self.txt_ai_output = ctk.CTkTextbox(self.hw_frame, height=100, fg_color="#1E1E1E", text_color="#00FFAA", font=("Consolas", 12), state="disabled")
+        self.txt_ai_output.pack(fill="x", padx=20, pady=5)
 
         # Fleet Tab Content
         self.fleet_frame = ctk.CTkFrame(self.tab_fleet, fg_color="transparent")
@@ -221,8 +235,43 @@ class View_4n4lyz3r(ctk.CTk):
         self.fleet_grid.pack(expand=True, fill="both", padx=10, pady=10)
         self._last_fleet_nodes = {}
 
+        # Settings Tab Content
+        self.settings_frame = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
+        self.settings_frame.pack(expand=True, fill="both")
+        self.settings_title = ctk.CTkLabel(self.settings_frame, text="APPLICATION SETTINGS", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
+        self.settings_title.pack(pady=10)
+
+        self.ai_key_frame = ctk.CTkFrame(self.settings_frame, fg_color="#1E1E1E", corner_radius=10)
+        self.ai_key_frame.pack(fill="x", padx=20, pady=10)
+
+        self.lbl_ai_key = ctk.CTkLabel(self.ai_key_frame, text="OpenAI API Key (Required for 🤖 Analyze with AI):", font=("Helvetica", 12), text_color="#A9A9A9")
+        self.lbl_ai_key.pack(pady=5, padx=10, anchor="w")
+
+        self.entry_ai_key = ctk.CTkEntry(self.ai_key_frame, placeholder_text="sk-...", width=400, show="*")
+        self.entry_ai_key.pack(side="left", padx=10, pady=10)
+
+        self.btn_save_ai_key = ctk.CTkButton(self.ai_key_frame, text="Save Key", fg_color="#00FFAA", text_color="#121212", hover_color="#00CC88", command=self._handle_save_ai_key)
+        self.btn_save_ai_key.pack(side="left", padx=10, pady=10)
+
         # Cache for Net-Sec to avoid unnecessary redraws
         self._last_net_conns = None
+
+    def _handle_ai_audit(self):
+        """Passes the request to the controller."""
+        if self.cmd_ai_audit:
+            self.txt_ai_output.configure(state="normal")
+            self.txt_ai_output.delete("0.0", "end")
+            self.txt_ai_output.insert("0.0", "Contacting AI Auditor. Please wait...")
+            self.txt_ai_output.configure(state="disabled")
+            self.btn_ai_audit.configure(state="disabled", text="Thinking...")
+            self.cmd_ai_audit()
+
+    def _handle_save_ai_key(self):
+        """Passes the key save action to the controller."""
+        key = self.entry_ai_key.get().strip()
+        if self.cmd_save_ai_key:
+            self.cmd_save_ai_key(key)
+            self.entry_ai_key.delete(0, 'end')
 
     def _handle_add_node(self):
         """Passes input values to the controller callback."""

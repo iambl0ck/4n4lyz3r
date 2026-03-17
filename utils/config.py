@@ -13,7 +13,8 @@ class ConfigManager:
         self.config = {
             "local_node": {
                 "api_key": secrets.token_urlsafe(32),
-                "port": 40404
+                "port": 40404,
+                "ai_api_key": ""
             },
             "fleet_nodes": [] # List of {"ip": str, "port": int, "api_key": str}
         }
@@ -47,6 +48,13 @@ class ConfigManager:
 
     def get_local_port(self):
         return self.config["local_node"]["port"]
+
+    def get_ai_api_key(self):
+        return self.config["local_node"].get("ai_api_key", "")
+
+    def set_ai_api_key(self, key):
+        self.config["local_node"]["ai_api_key"] = key
+        self.save_config()
 
     def get_fleet_nodes(self):
         return self.config["fleet_nodes"]
