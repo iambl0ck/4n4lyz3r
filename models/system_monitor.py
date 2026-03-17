@@ -437,3 +437,12 @@ class Model_4n4lyz3r:
             return True, f"Resumed PID {pid}"
         except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError) as e:
             return False, str(e)
+
+    def generate_snapshot(self, current_metrics):
+        """
+        Combines current dynamic metrics with cached static data into a single
+        comprehensive snapshot dictionary suitable for export logging.
+        """
+        snapshot = current_metrics.copy()
+        snapshot["os_platform"] = self.os_platform
+        return snapshot

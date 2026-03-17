@@ -172,6 +172,15 @@ class View_4n4lyz3r(ctk.CTk):
         self.lbl_disks_list = ctk.CTkLabel(self.disks_frame, text="Fetching Diagnostics...", font=("Consolas", 12), text_color="#A9A9A9", justify="left")
         self.lbl_disks_list.pack(pady=10, padx=20, anchor="w")
 
+        # Export Actions Frame
+        self.actions_frame = ctk.CTkFrame(self.hw_frame, fg_color="transparent")
+        self.actions_frame.pack(fill="x", padx=20, pady=20)
+        self.btn_export = ctk.CTkButton(
+            self.actions_frame, text="Export System Report", font=("Helvetica", 14, "bold"),
+            fg_color="#00FFAA", text_color="#121212", hover_color="#00CC88"
+        )
+        self.btn_export.pack(pady=10)
+
         # Cache for Net-Sec to avoid unnecessary redraws
         self._last_net_conns = None
 

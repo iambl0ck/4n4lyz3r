@@ -7,8 +7,10 @@ try:
 except Exception:
     _HAS_PYSTRAY = False
 
+import tkinter.filedialog as filedialog
 from PIL import Image, ImageDraw, ImageFont
 from models.system_monitor import Model_4n4lyz3r
+from models.report_generator import ReportGenerator
 from views.main_window import View_4n4lyz3r
 from views.mini_widget import MiniWidget_4n4lyz3r
 from utils.logger import Logger_4n4lyz3r
@@ -41,6 +43,7 @@ class Controller_4n4lyz3r:
         # Wire up view callbacks
         self.view.cmd_kill_process = self.handle_kill_process
         self.view.cmd_suspend_process = self.handle_suspend_process
+        self.view.btn_export.configure(command=self.handle_export_report)
 
         # Alert Cooldowns (in seconds, 5 mins = 300)
         self.alert_cooldowns = {
@@ -287,6 +290,49 @@ class Controller_4n4lyz3r:
         else:
             self.logger.log_error(f"User Action: Suspend Failed - {msg}")
             self.view.show_toast(f"Failed to suspend PID {pid}")
+
+    def handle_export_report(self):
+        """
+        Handles the export of the system report.
+        Uses a file dialog on the main thread, then spawns a background thread to format and write the file.
+        """
+        filetypes = [
+            ('Text Document', '*.txt'),
+            ('JSON Data', '*.json'),
+            ('All Files', '*.*')
+        ]
+
+        filepath = filedialog.asksaveasfilename(
+            title="Export 4n4lyz3r System Report",
+            defaultextension=".txt",
+            filetypes=filetypes,
+            initialfile=f"4n4lyz3r_report_{time.strftime('%Y%m%d_%H%M%S')}"
+        )
+
+        if not filepath:
+            return # User cancelled
+
+        with self.metrics_lock:
+            snapshot = self.model.generate_snapshot(self.metrics)
+
+        def _write_report():
+            if filepath.endswith('.json'):
+                success, msg = ReportGenerator.generate_json(snapshot, filepath)
+            else:
+                success, msg = ReportGenerator.generate_txt(snapshot, filepath)
+
+            def _notify():
+                if success:
+                    self.logger.log_info(f"System report exported to {filepath}")
+                    self.view.show_toast("Report Exported Successfully!")
+                else:
+                    self.logger.log_error(f"Report export failed: {msg}")
+                    self.view.show_toast("Report Export Failed")
+
+            # Post toast notification safely back to main thread
+            self.view.after(0, _notify)
+
+        threading.Thread(target=_write_report, daemon=True).start()
 
     def on_closing(self, icon=None, item=None):
         """Gracefully shuts down the application and background threads."""
