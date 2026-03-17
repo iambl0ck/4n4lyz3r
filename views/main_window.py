@@ -146,7 +146,7 @@ class View_4n4lyz3r(ctk.CTk):
         self._last_procs = None
 
         # Deep Specs Tab Content
-        self.hw_frame = ctk.CTkFrame(self.tab_hw, fg_color="transparent")
+        self.hw_frame = ctk.CTkScrollableFrame(self.tab_hw, fg_color="transparent")
         self.hw_frame.pack(expand=True, fill="both")
         self.hw_title = ctk.CTkLabel(self.hw_frame, text="RAW HARDWARE & FIRMWARE SPECS", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
         self.hw_title.pack(pady=10)
@@ -156,12 +156,21 @@ class View_4n4lyz3r(ctk.CTk):
         self.lbl_mb = ctk.CTkLabel(self.hw_frame, text="Motherboard: Fetching...", font=("Consolas", 14), text_color="#FFFFFF")
         self.lbl_mb.pack(pady=5)
 
+        # Battery Health Frame
+        self.bat_frame = ctk.CTkFrame(self.hw_frame, fg_color="#1E1E1E", corner_radius=10)
+        self.bat_frame.pack(fill="x", padx=20, pady=10)
+        self.lbl_bat_title = ctk.CTkLabel(self.bat_frame, text="BATTERY WEAR LEVEL & HEALTH", font=("Helvetica", 14, "bold"), text_color="#00FFAA")
+        self.lbl_bat_title.pack(pady=10)
+        self.lbl_bat_data = ctk.CTkLabel(self.bat_frame, text="Fetching Analytics...", font=("Consolas", 12), text_color="#A9A9A9")
+        self.lbl_bat_data.pack(pady=10)
+
+        # Disks Frame
         self.disks_frame = ctk.CTkFrame(self.hw_frame, fg_color="#1E1E1E", corner_radius=10)
-        self.disks_frame.pack(expand=True, fill="both", padx=20, pady=20)
-        self.lbl_disks_title = ctk.CTkLabel(self.disks_frame, text="S.M.A.R.T. DISK DRIVES", font=("Helvetica", 14, "bold"), text_color="#00FFAA")
+        self.disks_frame.pack(fill="x", padx=20, pady=10)
+        self.lbl_disks_title = ctk.CTkLabel(self.disks_frame, text="S.M.A.R.T. DISK DIAGNOSTICS", font=("Helvetica", 14, "bold"), text_color="#00FFAA")
         self.lbl_disks_title.pack(pady=10)
-        self.lbl_disks_list = ctk.CTkLabel(self.disks_frame, text="", font=("Consolas", 12), text_color="#A9A9A9", justify="left")
-        self.lbl_disks_list.pack(pady=5, padx=20, anchor="w")
+        self.lbl_disks_list = ctk.CTkLabel(self.disks_frame, text="Fetching Diagnostics...", font=("Consolas", 12), text_color="#A9A9A9", justify="left")
+        self.lbl_disks_list.pack(pady=10, padx=20, anchor="w")
 
         # Cache for Net-Sec to avoid unnecessary redraws
         self._last_net_conns = None
@@ -329,12 +338,30 @@ class View_4n4lyz3r(ctk.CTk):
             self.lbl_bios.configure(text=f"BIOS: {deep_specs.get('bios', 'N/A')}")
             self.lbl_mb.configure(text=f"Motherboard: {deep_specs.get('motherboard', 'N/A')}")
 
-            disks = deep_specs.get('disks', [])
-            if disks:
-                disk_text = "\n".join(disks)
-                self.lbl_disks_list.configure(text=disk_text)
+            # Battery Wear Analytics
+            bat_health = deep_specs.get("battery_health", {})
+            b_status = bat_health.get("status", "N/A (Desktop)")
+            if b_status == "Found":
+                wear = bat_health.get("wear_level", "N/A")
+                hpct = bat_health.get("health_pct", "N/A")
+                grade = bat_health.get("grade", "N/A")
+                self.lbl_bat_data.configure(text=f"Health Grade: {grade}\nTotal Wear Level: {wear}%\nUsable Charge Capacity: {hpct}%")
             else:
-                self.lbl_disks_list.configure(text="No disks found or permission denied.")
+                self.lbl_bat_data.configure(text=f"Status: {b_status}")
+
+            # S.M.A.R.T Disk Analytics
+            smart_disks = deep_specs.get("smart_disks", [])
+            if smart_disks:
+                disk_text_lines = []
+                for d in smart_disks:
+                    model = d.get('model', 'Unknown')
+                    status = d.get('status', 'Unknown')
+                    grade = d.get('grade', 'Unknown')
+                    disk_text_lines.append(f"Model: {model}\nStatus: {status}  |  Grade: {grade}\n")
+
+                self.lbl_disks_list.configure(text="\n".join(disk_text_lines))
+            else:
+                self.lbl_disks_list.configure(text="No deep diagnostics found or permission denied.")
 
         # Update Net-Sec Connections (if the tab is visible)
         # To avoid massive UI updates, only refresh if the list changed

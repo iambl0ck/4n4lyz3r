@@ -10,7 +10,9 @@ try:
 except ImportError:
     _HAS_GPUTIL = False
 
+import threading
 from models.native_os import NativePoller
+from models.health_analyzer import HardwareHealthAnalyzer
 
 # Constants for Active Threat Heuristics
 SUSPICIOUS_PATHS = [
@@ -29,13 +31,20 @@ class Model_4n4lyz3r:
     def __init__(self):
         self.os_platform = platform.system()
         self.native_poller = NativePoller()
+        self.health_analyzer = HardwareHealthAnalyzer()
 
         # Initialize psutil counters to avoid blocking/spikes on first fetch
         psutil.cpu_percent()
         self.native_poller.get_cpu_percent_native() # Prime native poller
 
         # --- EXTREME CACHING (Static Specs) ---
-        self.cached_specs = {}
+        self.cached_specs = {
+            "battery_health": {"status": "Fetching...", "wear_level": 0.0, "grade": ""},
+            "smart_disks": []
+        }
+
+        # Spawn an async daemon thread to fetch heavy deep health analytics so we don't block startup
+        threading.Thread(target=self._fetch_deep_health_analytics_daemon, daemon=True).start()
 
         # Cache RAM total
         try:
@@ -76,6 +85,17 @@ class Model_4n4lyz3r:
                     self.cached_specs["gpu_total_mb"] = round(gpus[0].memoryTotal, 1)
             except Exception:
                 self.has_gpu = False
+
+    def _fetch_deep_health_analytics_daemon(self):
+        """Asynchronously fetches deep hardware wear/tear and caches it."""
+        try:
+            bat_health = self.health_analyzer.analyze_battery()
+            disk_health = self.health_analyzer.analyze_disks()
+
+            self.cached_specs["battery_health"] = bat_health
+            self.cached_specs["smart_disks"] = disk_health
+        except Exception:
+            pass
 
     def get_cpu_metrics(self):
         """Returns CPU usage percentage via native OS hooks (if supported) and pushes to bounded history."""
@@ -340,7 +360,13 @@ class Model_4n4lyz3r:
 
     def get_deep_specs(self):
         """Fetches raw Motherboard/BIOS and Disk S.M.A.R.T data via subprocess hooks."""
-        specs = {"bios": "N/A", "motherboard": "N/A", "disks": []}
+        specs = {
+            "bios": "N/A",
+            "motherboard": "N/A",
+            "disks": [],
+            "battery_health": self.cached_specs.get("battery_health", {}),
+            "smart_disks": self.cached_specs.get("smart_disks", [])
+        }
 
         try:
             if self.os_platform == 'Windows':
