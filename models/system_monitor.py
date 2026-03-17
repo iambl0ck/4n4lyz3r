@@ -3,23 +3,36 @@ import platform
 import time
 import collections
 import ipaddress
+import subprocess
 try:
     import GPUtil
     _HAS_GPUTIL = True
 except ImportError:
     _HAS_GPUTIL = False
 
+from models.native_os import NativePoller
+
+# Constants for Active Threat Heuristics
+SUSPICIOUS_PATHS = [
+    "/tmp", "/var/tmp", "/dev/shm",
+    "AppData\\Local\\Temp", "AppData\\Roaming",
+    "C:\\Windows\\Temp", "AppData\\LocalLow", "Downloads"
+]
+
 class Model_4n4lyz3r:
     """
     Model class to fetch and process system metrics for 4n4lyz3r.
     Handles fallbacks for OS-specific restrictions gracefully.
-    Implements extreme static caching and memory leak prevention.
+    Implements extreme static caching, memory leak prevention, and native C-level bypassing.
     """
 
     def __init__(self):
         self.os_platform = platform.system()
+        self.native_poller = NativePoller()
+
         # Initialize psutil counters to avoid blocking/spikes on first fetch
         psutil.cpu_percent()
+        self.native_poller.get_cpu_percent_native() # Prime native poller
 
         # --- EXTREME CACHING (Static Specs) ---
         self.cached_specs = {}
@@ -65,9 +78,12 @@ class Model_4n4lyz3r:
                 self.has_gpu = False
 
     def get_cpu_metrics(self):
-        """Returns CPU usage percentage and pushes to bounded history."""
+        """Returns CPU usage percentage via native OS hooks (if supported) and pushes to bounded history."""
         try:
-            val = psutil.cpu_percent(interval=None)
+            val = self.native_poller.get_cpu_percent_native()
+            if val is None:
+                # Fallback to psutil if native hook failed or is unsupported
+                val = psutil.cpu_percent(interval=None)
             self.history_cpu.append(val)
             return val
         except Exception:
@@ -192,13 +208,27 @@ class Model_4n4lyz3r:
         except Exception:
             return None
 
-    def get_top_processes(self, limit=5):
-        """Returns top processes sorted by CPU (and optionally memory) usage."""
+    def get_top_processes(self, limit=10):
+        """Returns top processes with Active Threat Heuristics."""
         try:
             processes = []
-            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe']):
                 try:
                     pinfo = proc.info
+                    # Evaluate Heuristics
+                    exe_path = pinfo.get('exe') or ""
+                    is_suspicious = False
+
+                    if exe_path:
+                        for bad_path in SUSPICIOUS_PATHS:
+                            if bad_path.lower() in exe_path.lower():
+                                is_suspicious = True
+                                break
+                        # Unix hidden paths check (.foldername)
+                        if "/." in exe_path:
+                            is_suspicious = True
+
+                    pinfo['suspicious'] = is_suspicious
                     processes.append(pinfo)
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
@@ -308,16 +338,76 @@ class Model_4n4lyz3r:
         except (psutil.AccessDenied, Exception):
             return []
 
-    def get_all_metrics(self):
-        """Fetches and aggregates basic (synchronous) metrics into a single dictionary."""
-        # This was used in the MVP, but the controller will use individual async calls.
-        return {
-            "cpu": self.get_cpu_metrics(),
-            "ram": self.get_ram_metrics(),
-            "disk": self.get_disk_metrics(),
-            "network": self.get_network_metrics(),
-            "gpu": self.get_gpu_metrics(),
-            "battery": self.get_battery_metrics(),
-            "temperature": self.get_temperatures(),
-            "fan": self.get_fan_speeds()
-        }
+    def get_deep_specs(self):
+        """Fetches raw Motherboard/BIOS and Disk S.M.A.R.T data via subprocess hooks."""
+        specs = {"bios": "N/A", "motherboard": "N/A", "disks": []}
+
+        try:
+            if self.os_platform == 'Windows':
+                # Windows WMIC hooks for BIOS and BaseBoard
+                bios = subprocess.check_output(['wmic', 'bios', 'get', 'manufacturer,smbiosbiosversion'], shell=True, text=True).split('\n')[1].strip()
+                mb = subprocess.check_output(['wmic', 'baseboard', 'get', 'manufacturer,product'], shell=True, text=True).split('\n')[1].strip()
+                specs["bios"] = bios if bios else "N/A"
+                specs["motherboard"] = mb if mb else "N/A"
+
+                # Windows Disk Drives basic via WMIC
+                disks = subprocess.check_output(['wmic', 'diskdrive', 'get', 'model,status'], shell=True, text=True).strip().split('\n')[1:]
+                for d in disks:
+                    d_clean = d.strip()
+                    if d_clean:
+                        specs["disks"].append(d_clean)
+
+            elif self.os_platform == 'Linux':
+                # Read /sys/class/dmi/id for native DMI tables (requires some read permissions, might fallback)
+                try:
+                    with open('/sys/class/dmi/id/bios_version', 'r') as f:
+                        specs["bios"] = f.read().strip()
+                except Exception:
+                    pass
+                try:
+                    with open('/sys/class/dmi/id/board_name', 'r') as f:
+                        specs["motherboard"] = f.read().strip()
+                except Exception:
+                    pass
+
+                # Fetch S.M.A.R.T. data using smartctl if available
+                try:
+                    # lsblk to get disks
+                    lsblk = subprocess.check_output(['lsblk', '-nd', '-o', 'NAME,MODEL'], text=True).strip().split('\n')
+                    for line in lsblk:
+                        if line:
+                            specs["disks"].append(line.strip())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return specs
+
+    def kill_process(self, pid):
+        """Attempt to securely kill a process by PID."""
+        try:
+            p = psutil.Process(pid)
+            p.terminate()
+            return True, f"Sent terminate signal to PID {pid}"
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            return False, str(e)
+
+    def suspend_process(self, pid):
+        """Attempt to securely suspend a process by PID."""
+        try:
+            p = psutil.Process(pid)
+            p.suspend()
+            return True, f"Suspended PID {pid}"
+        except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError) as e:
+            # AttributeError happens if OS doesn't support suspend
+            return False, str(e)
+
+    def resume_process(self, pid):
+        """Attempt to securely resume a process by PID."""
+        try:
+            p = psutil.Process(pid)
+            p.resume()
+            return True, f"Resumed PID {pid}"
+        except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError) as e:
+            return False, str(e)

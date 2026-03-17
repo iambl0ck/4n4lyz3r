@@ -51,6 +51,12 @@ class View_4n4lyz3r(ctk.CTk):
         # Tabs
         self.tab_dashboard = self.tabview.add("Dashboard")
         self.tab_netsec = self.tabview.add("Net-Sec")
+        self.tab_defense = self.tabview.add("Active Defense")
+        self.tab_hw = self.tabview.add("Deep Specs")
+
+        # Callbacks (assigned by controller)
+        self.cmd_kill_process = None
+        self.cmd_suspend_process = None
 
         # Dashboard Tab Content Frame
         self.content_frame = ctk.CTkFrame(self.tab_dashboard, fg_color="transparent")
@@ -129,6 +135,33 @@ class View_4n4lyz3r(ctk.CTk):
         self.toast_label = ctk.CTkLabel(self.toast_frame, text="", font=("Helvetica", 14, "bold"), text_color="#FFFFFF")
         self.toast_label.pack(expand=True, padx=20, pady=10)
         self._toast_timer = None
+
+        # Active Defense Tab Content
+        self.defense_frame = ctk.CTkFrame(self.tab_defense, fg_color="transparent")
+        self.defense_frame.pack(expand=True, fill="both")
+        self.defense_title = ctk.CTkLabel(self.defense_frame, text="PROCESS MANAGER (ACTIVE HEURISTICS)", font=("Helvetica", 16, "bold"), text_color="#FF4444")
+        self.defense_title.pack(pady=10)
+        self.defense_list = ctk.CTkScrollableFrame(self.defense_frame, fg_color="#121212", corner_radius=10)
+        self.defense_list.pack(expand=True, fill="both", padx=10, pady=10)
+        self._last_procs = None
+
+        # Deep Specs Tab Content
+        self.hw_frame = ctk.CTkFrame(self.tab_hw, fg_color="transparent")
+        self.hw_frame.pack(expand=True, fill="both")
+        self.hw_title = ctk.CTkLabel(self.hw_frame, text="RAW HARDWARE & FIRMWARE SPECS", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
+        self.hw_title.pack(pady=10)
+
+        self.lbl_bios = ctk.CTkLabel(self.hw_frame, text="BIOS: Fetching...", font=("Consolas", 14), text_color="#FFFFFF")
+        self.lbl_bios.pack(pady=5)
+        self.lbl_mb = ctk.CTkLabel(self.hw_frame, text="Motherboard: Fetching...", font=("Consolas", 14), text_color="#FFFFFF")
+        self.lbl_mb.pack(pady=5)
+
+        self.disks_frame = ctk.CTkFrame(self.hw_frame, fg_color="#1E1E1E", corner_radius=10)
+        self.disks_frame.pack(expand=True, fill="both", padx=20, pady=20)
+        self.lbl_disks_title = ctk.CTkLabel(self.disks_frame, text="S.M.A.R.T. DISK DRIVES", font=("Helvetica", 14, "bold"), text_color="#00FFAA")
+        self.lbl_disks_title.pack(pady=10)
+        self.lbl_disks_list = ctk.CTkLabel(self.disks_frame, text="", font=("Consolas", 12), text_color="#A9A9A9", justify="left")
+        self.lbl_disks_list.pack(pady=5, padx=20, anchor="w")
 
         # Cache for Net-Sec to avoid unnecessary redraws
         self._last_net_conns = None
@@ -243,17 +276,65 @@ class View_4n4lyz3r(ctk.CTk):
             # Hide on desktop / if not available
             self.battery_label.pack_forget()
 
-        # Update Top Processes
+        # Update Top Processes (Dashboard View)
         procs = metrics.get('top_processes', [])
         for i, lbl in enumerate(self.proc_labels):
-            if i < len(procs):
+            if i < len(procs) and i < 5:
                 p = procs[i]
                 name = p.get('name', 'Unknown')[:10].ljust(10)
                 cpu = p.get('cpu_percent', 0)
                 mem = p.get('memory_percent', 0)
-                lbl.configure(text=f"{name} | {cpu:.1f}% CPU | {mem:.1f}% RAM")
+                suspicious = p.get('suspicious', False)
+                text_color = "#FF4444" if suspicious else "#A9A9A9"
+                lbl.configure(text=f"{name} | {cpu:.1f}% CPU | {mem:.1f}% RAM", text_color=text_color)
             else:
                 lbl.configure(text="")
+
+        # Update Active Defense Tab (if visible)
+        if self.tabview.get() == "Active Defense":
+            if procs != self._last_procs:
+                self._last_procs = procs.copy() if procs else []
+
+                # Clear existing
+                for widget in self.defense_list.winfo_children():
+                    widget.destroy()
+
+                # Repopulate
+                for p in procs:
+                    pid = p.get('pid', 'N/A')
+                    name = p.get('name', 'Unknown')
+                    cpu = p.get('cpu_percent', 0)
+                    mem = p.get('memory_percent', 0)
+                    suspicious = p.get('suspicious', False)
+
+                    row_frame = ctk.CTkFrame(self.defense_list, fg_color="transparent")
+                    row_frame.pack(fill="x", pady=2)
+
+                    t_color = "#FF4444" if suspicious else "#FFFFFF"
+                    tag = "[SUSPICIOUS] " if suspicious else ""
+                    lbl = ctk.CTkLabel(row_frame, text=f"{tag}PID: {pid} | {name} | CPU: {cpu:.1f}% | RAM: {mem:.1f}%", font=("Consolas", 12), text_color=t_color)
+                    lbl.pack(side="left", padx=10)
+
+                    if pid != 'N/A' and self.cmd_kill_process:
+                        btn_kill = ctk.CTkButton(row_frame, text="KILL", width=50, height=24, fg_color="#FF4444", hover_color="#CC0000", command=lambda p=pid: self.cmd_kill_process(p))
+                        btn_kill.pack(side="right", padx=5)
+
+                    if pid != 'N/A' and self.cmd_suspend_process:
+                        btn_sus = ctk.CTkButton(row_frame, text="SUSPEND", width=60, height=24, fg_color="#FFAA00", text_color="#121212", hover_color="#CC8800", command=lambda p=pid: self.cmd_suspend_process(p))
+                        btn_sus.pack(side="right", padx=5)
+
+        # Update Deep Specs (if tab is visible)
+        deep_specs = metrics.get('deep_specs', {})
+        if self.tabview.get() == "Deep Specs":
+            self.lbl_bios.configure(text=f"BIOS: {deep_specs.get('bios', 'N/A')}")
+            self.lbl_mb.configure(text=f"Motherboard: {deep_specs.get('motherboard', 'N/A')}")
+
+            disks = deep_specs.get('disks', [])
+            if disks:
+                disk_text = "\n".join(disks)
+                self.lbl_disks_list.configure(text=disk_text)
+            else:
+                self.lbl_disks_list.configure(text="No disks found or permission denied.")
 
         # Update Net-Sec Connections (if the tab is visible)
         # To avoid massive UI updates, only refresh if the list changed

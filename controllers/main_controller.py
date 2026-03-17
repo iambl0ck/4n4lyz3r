@@ -35,8 +35,12 @@ class Controller_4n4lyz3r:
         self.metrics = {
             "cpu": "N/A", "ram": {}, "disk": {}, "network": {}, "gpu": {},
             "battery": None, "temperature": "N/A", "fan": "N/A", "top_processes": [],
-            "net_connections": []
+            "net_connections": [], "deep_specs": {}
         }
+
+        # Wire up view callbacks
+        self.view.cmd_kill_process = self.handle_kill_process
+        self.view.cmd_suspend_process = self.handle_suspend_process
 
         # Alert Cooldowns (in seconds, 5 mins = 300)
         self.alert_cooldowns = {
@@ -94,17 +98,19 @@ class Controller_4n4lyz3r:
             time.sleep(5)
 
     def poll_10s(self):
-        """Disk, Battery, Net Connections - every 10 seconds"""
+        """Disk, Battery, Net Connections, Deep Specs - every 10 seconds"""
         while self.running:
             disk = self.model.get_disk_metrics()
             battery = self.model.get_battery_metrics()
-            # Net connections can be heavy, poll only every 10s
+            # Net connections and Deep specs can be heavy, poll only every 10s
             net_conns = self.model.get_net_connections()
+            deep_specs = self.model.get_deep_specs()
 
             with self.metrics_lock:
                 self.metrics["disk"] = disk
                 self.metrics["battery"] = battery
                 self.metrics["net_connections"] = net_conns
+                self.metrics["deep_specs"] = deep_specs
             time.sleep(10)
 
     def check_alerts(self, cpu, ram, temp):
@@ -261,6 +267,26 @@ class Controller_4n4lyz3r:
 
         # Refresh UI every 1 second (this doesn't block as data fetching is threaded)
         self.ui_update_job = self.view.after(1000, self.update_ui_loop)
+
+    def handle_kill_process(self, pid):
+        """Callback to securely kill a process by PID from the UI."""
+        success, msg = self.model.kill_process(pid)
+        if success:
+            self.logger.log_info(f"User Action: Killed {msg}")
+            self.view.show_toast(f"Killed PID {pid}")
+        else:
+            self.logger.log_error(f"User Action: Kill Failed - {msg}")
+            self.view.show_toast(f"Failed to kill PID {pid} (Access Denied?)")
+
+    def handle_suspend_process(self, pid):
+        """Callback to securely suspend a process by PID from the UI."""
+        success, msg = self.model.suspend_process(pid)
+        if success:
+            self.logger.log_info(f"User Action: Suspended {msg}")
+            self.view.show_toast(f"Suspended PID {pid}")
+        else:
+            self.logger.log_error(f"User Action: Suspend Failed - {msg}")
+            self.view.show_toast(f"Failed to suspend PID {pid}")
 
     def on_closing(self, icon=None, item=None):
         """Gracefully shuts down the application and background threads."""
