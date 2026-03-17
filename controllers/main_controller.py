@@ -13,21 +13,25 @@ from PIL import Image, ImageDraw, ImageFont
 from models.system_monitor import Model_4n4lyz3r
 from models.report_generator import ReportGenerator
 from models.update_checker import OTAUpdateChecker
+from models.fleet_manager import FleetManagerPoller
 from views.main_window import View_4n4lyz3r
 from views.mini_widget import MiniWidget_4n4lyz3r
 from utils.logger import Logger_4n4lyz3r
+from utils.config import ConfigManager
+from services.api_server import ApiServerService
 
 class Controller_4n4lyz3r:
     """
     Main Controller for 4n4lyz3r.
     Handles the synchronization between the Model_4n4lyz3r and the View_4n4lyz3r.
-    Implements multi-threading, headless tray mode, and explicit GC.
+    Implements multi-threading, headless tray mode, explicit GC, and Fleet APIs.
     """
     def __init__(self):
         self.model = Model_4n4lyz3r()
         self.view = View_4n4lyz3r()
         self.mini_widget = None
         self.logger = Logger_4n4lyz3r()
+        self.config = ConfigManager()
         self.is_pip_mode = False
         self.is_tray_mode = False
         self.running = True
@@ -39,13 +43,26 @@ class Controller_4n4lyz3r:
         self.metrics = {
             "cpu": "N/A", "ram": {}, "disk": {}, "network": {}, "gpu": {},
             "battery": None, "temperature": "N/A", "fan": "N/A", "top_processes": [],
-            "net_connections": [], "deep_specs": {}
+            "net_connections": [], "deep_specs": {}, "fleet_data": {}
         }
+
+        # Initialize REST API Server Daemon
+        self.api_server = ApiServerService(
+            port=self.config.get_local_port(),
+            get_api_key_callback=self.config.get_local_api_key,
+            get_snapshot_callback=self._get_current_snapshot,
+            logger=self.logger
+        )
 
         # Wire up view callbacks
         self.view.cmd_kill_process = self.handle_kill_process
         self.view.cmd_suspend_process = self.handle_suspend_process
+        self.view.cmd_add_fleet_node = self.handle_add_fleet_node
         self.view.btn_export.configure(command=self.handle_export_report)
+
+        # Setup View static data
+        self.view.lbl_local_api.configure(text=f"Local API Key: {self.config.get_local_api_key()}")
+        self.view.lbl_local_port.configure(text=f"Local Port: {self.config.get_local_port()}")
 
         # Alert Cooldowns (in seconds, 5 mins = 300)
         self.alert_cooldowns = {
@@ -63,13 +80,23 @@ class Controller_4n4lyz3r:
 
     def start_threads(self):
         """Initializes background daemon threads for different polling intervals."""
+        # Start Fleet API background listener
+        self.api_server.start()
+
         threading.Thread(target=self.poll_1s, daemon=True).start()
         threading.Thread(target=self.poll_2s, daemon=True).start()
         threading.Thread(target=self.poll_5s, daemon=True).start()
         threading.Thread(target=self.poll_10s, daemon=True).start()
 
         # Schedule the OTA Update Checker (Runs ONCE 5 seconds after launch)
-        threading.Timer(5.0, self.check_for_ota_updates).start()
+        ota_timer = threading.Timer(5.0, self.check_for_ota_updates)
+        ota_timer.daemon = True
+        ota_timer.start()
+
+    def _get_current_snapshot(self):
+        """Helper to return a thread-safe snapshot for the API server."""
+        with self.metrics_lock:
+            return self.model.generate_snapshot(self.metrics)
 
     def check_for_ota_updates(self):
         """Pings the GitHub API for newer releases silently."""
@@ -121,7 +148,7 @@ class Controller_4n4lyz3r:
             time.sleep(5)
 
     def poll_10s(self):
-        """Disk, Battery, Net Connections, Deep Specs - every 10 seconds"""
+        """Disk, Battery, Net Connections, Deep Specs, Fleet Data - every 10 seconds"""
         while self.running:
             disk = self.model.get_disk_metrics()
             battery = self.model.get_battery_metrics()
@@ -129,11 +156,16 @@ class Controller_4n4lyz3r:
             net_conns = self.model.get_net_connections()
             deep_specs = self.model.get_deep_specs()
 
+            # Poll fleet nodes asynchronously
+            fleet_nodes = self.config.get_fleet_nodes()
+            fleet_data = FleetManagerPoller.poll_all(fleet_nodes) if fleet_nodes else {}
+
             with self.metrics_lock:
                 self.metrics["disk"] = disk
                 self.metrics["battery"] = battery
                 self.metrics["net_connections"] = net_conns
                 self.metrics["deep_specs"] = deep_specs
+                self.metrics["fleet_data"] = fleet_data
             time.sleep(10)
 
     def check_alerts(self, cpu, ram, temp):
@@ -354,9 +386,19 @@ class Controller_4n4lyz3r:
 
         threading.Thread(target=_write_report, daemon=True).start()
 
+    def handle_add_fleet_node(self, ip, port, api_key):
+        """Callback to add a new fleet node to the config."""
+        success, msg = self.config.add_fleet_node(ip, port, api_key)
+        if success:
+            self.logger.log_info(f"Added new Fleet Node: {ip}:{port}")
+            self.view.show_toast("Fleet Node Added!")
+        else:
+            self.view.show_toast(msg)
+
     def on_closing(self, icon=None, item=None):
         """Gracefully shuts down the application and background threads."""
         self.running = False
+        self.api_server.stop()
         if self.tray_icon:
             self.tray_icon.stop()
 

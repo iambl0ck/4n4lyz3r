@@ -59,10 +59,12 @@ class View_4n4lyz3r(ctk.CTk):
         self.tab_netsec = self.tabview.add("Net-Sec")
         self.tab_defense = self.tabview.add("Active Defense")
         self.tab_hw = self.tabview.add("Deep Specs")
+        self.tab_fleet = self.tabview.add("Fleet")
 
         # Callbacks (assigned by controller)
         self.cmd_kill_process = None
         self.cmd_suspend_process = None
+        self.cmd_add_fleet_node = None
 
         # Dashboard Tab Content Frame
         self.content_frame = ctk.CTkFrame(self.tab_dashboard, fg_color="transparent")
@@ -187,8 +189,49 @@ class View_4n4lyz3r(ctk.CTk):
         )
         self.btn_export.pack(pady=10)
 
+        # Fleet Tab Content
+        self.fleet_frame = ctk.CTkFrame(self.tab_fleet, fg_color="transparent")
+        self.fleet_frame.pack(expand=True, fill="both")
+        self.fleet_title = ctk.CTkLabel(self.fleet_frame, text="FLEET MANAGEMENT", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
+        self.fleet_title.pack(pady=10)
+
+        # Local Node Info
+        self.local_node_frame = ctk.CTkFrame(self.fleet_frame, fg_color="#1E1E1E", corner_radius=10)
+        self.local_node_frame.pack(fill="x", padx=20, pady=5)
+        self.lbl_local_api = ctk.CTkLabel(self.local_node_frame, text="Local API Key: Fetching...", font=("Consolas", 12), text_color="#FFFFFF")
+        self.lbl_local_api.pack(pady=5, padx=10, anchor="w")
+        self.lbl_local_port = ctk.CTkLabel(self.local_node_frame, text="Local Port: 40404", font=("Consolas", 12), text_color="#A9A9A9")
+        self.lbl_local_port.pack(pady=5, padx=10, anchor="w")
+
+        # Add Node Form
+        self.add_node_frame = ctk.CTkFrame(self.fleet_frame, fg_color="#121212", corner_radius=10)
+        self.add_node_frame.pack(fill="x", padx=20, pady=10)
+
+        self.entry_ip = ctk.CTkEntry(self.add_node_frame, placeholder_text="Remote IP (e.g. 192.168.1.100)", width=200)
+        self.entry_ip.pack(side="left", padx=10, pady=10)
+
+        self.entry_key = ctk.CTkEntry(self.add_node_frame, placeholder_text="Remote API Key", width=300)
+        self.entry_key.pack(side="left", padx=10, pady=10)
+
+        self.btn_add_node = ctk.CTkButton(self.add_node_frame, text="Add Node", fg_color="#00FFAA", text_color="#121212", hover_color="#00CC88", command=self._handle_add_node)
+        self.btn_add_node.pack(side="left", padx=10, pady=10)
+
+        # Fleet Grid
+        self.fleet_grid = ctk.CTkScrollableFrame(self.fleet_frame, fg_color="transparent")
+        self.fleet_grid.pack(expand=True, fill="both", padx=10, pady=10)
+        self._last_fleet_nodes = {}
+
         # Cache for Net-Sec to avoid unnecessary redraws
         self._last_net_conns = None
+
+    def _handle_add_node(self):
+        """Passes input values to the controller callback."""
+        ip = self.entry_ip.get().strip()
+        key = self.entry_key.get().strip()
+        if ip and key and self.cmd_add_fleet_node:
+            self.cmd_add_fleet_node(ip, 40404, key)
+            self.entry_ip.delete(0, 'end')
+            self.entry_key.delete(0, 'end')
 
     def show_toast(self, message):
         """Displays a sliding toast notification for alerts."""
@@ -383,6 +426,38 @@ class View_4n4lyz3r(ctk.CTk):
                 self.lbl_disks_list.configure(text="\n".join(disk_text_lines))
             else:
                 self.lbl_disks_list.configure(text="No deep diagnostics found or permission denied.")
+
+        # Update Fleet Management (if tab is visible)
+        fleet_data = metrics.get('fleet_data', {})
+        if self.tabview.get() == "Fleet":
+            if fleet_data != self._last_fleet_nodes:
+                self._last_fleet_nodes = fleet_data.copy() if fleet_data else {}
+
+                # Clear existing
+                for widget in self.fleet_grid.winfo_children():
+                    widget.destroy()
+
+                # Repopulate
+                for node_id, data in fleet_data.items():
+                    is_online = data.get("online", False)
+                    snap = data.get("snapshot", {})
+
+                    status_color = "#00FFAA" if is_online else "#FF4444"
+                    status_text = "🟢 Online" if is_online else "🔴 Offline"
+                    cpu = snap.get("cpu", "N/A") if is_online else "---"
+
+                    ram_dict = snap.get("ram", {}) if is_online else {}
+                    ram = ram_dict.get("percent", "N/A") if isinstance(ram_dict, dict) else "---"
+
+                    # Mini Card
+                    card = ctk.CTkFrame(self.fleet_grid, fg_color="#1E1E1E", corner_radius=10, border_width=1, border_color=status_color)
+                    card.pack(fill="x", pady=5, padx=10)
+
+                    lbl_node = ctk.CTkLabel(card, text=f"Node: {node_id}  |  {status_text}", font=("Helvetica", 14, "bold"), text_color="#FFFFFF")
+                    lbl_node.pack(side="left", padx=10, pady=10)
+
+                    lbl_stats = ctk.CTkLabel(card, text=f"CPU: {cpu}%  |  RAM: {ram}%", font=("Consolas", 14), text_color="#A9A9A9")
+                    lbl_stats.pack(side="right", padx=10, pady=10)
 
         # Update Net-Sec Connections (if the tab is visible)
         # To avoid massive UI updates, only refresh if the list changed
