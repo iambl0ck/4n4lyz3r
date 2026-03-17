@@ -1,6 +1,8 @@
 import psutil
 import platform
 import time
+import collections
+import ipaddress
 try:
     import GPUtil
     _HAS_GPUTIL = True
@@ -11,12 +13,36 @@ class Model_4n4lyz3r:
     """
     Model class to fetch and process system metrics for 4n4lyz3r.
     Handles fallbacks for OS-specific restrictions gracefully.
+    Implements extreme static caching and memory leak prevention.
     """
 
     def __init__(self):
         self.os_platform = platform.system()
         # Initialize psutil counters to avoid blocking/spikes on first fetch
         psutil.cpu_percent()
+
+        # --- EXTREME CACHING (Static Specs) ---
+        self.cached_specs = {}
+
+        # Cache RAM total
+        try:
+            mem = psutil.virtual_memory()
+            self.cached_specs["ram_total_gb"] = round(mem.total / (1024 ** 3), 2)
+        except Exception:
+            self.cached_specs["ram_total_gb"] = "N/A"
+
+        # Cache Disk total
+        try:
+            path = '/' if self.os_platform != 'Windows' else 'C:\\'
+            disk = psutil.disk_usage(path)
+            self.cached_specs["disk_total_gb"] = round(disk.total / (1024 ** 3), 2)
+        except Exception:
+            self.cached_specs["disk_total_gb"] = "N/A"
+
+        # --- DYNAMIC DATA & MEMORY LEAK PREVENTION ---
+        # Historical arrays bounded by deque(maxlen)
+        self.history_cpu = collections.deque(maxlen=60)
+        self.history_ram = collections.deque(maxlen=60)
 
         # Disk IO state
         self.last_disk_io = psutil.disk_io_counters()
@@ -33,29 +59,33 @@ class Model_4n4lyz3r:
                 gpus = GPUtil.getGPUs()
                 if not gpus:
                     self.has_gpu = False
+                else:
+                    self.cached_specs["gpu_total_mb"] = round(gpus[0].memoryTotal, 1)
             except Exception:
                 self.has_gpu = False
 
     def get_cpu_metrics(self):
-        """Returns CPU usage percentage."""
+        """Returns CPU usage percentage and pushes to bounded history."""
         try:
-            return psutil.cpu_percent(interval=None)
+            val = psutil.cpu_percent(interval=None)
+            self.history_cpu.append(val)
+            return val
         except Exception:
             return "N/A"
 
     def get_ram_metrics(self):
-        """Returns RAM usage percentage and total/used memory in GB."""
+        """Returns RAM usage percentage and pushes to bounded history."""
         try:
             mem = psutil.virtual_memory()
-            total_gb = mem.total / (1024 ** 3)
             used_gb = mem.used / (1024 ** 3)
+            self.history_ram.append(mem.percent)
             return {
                 "percent": mem.percent,
                 "used_gb": round(used_gb, 2),
-                "total_gb": round(total_gb, 2)
+                "total_gb": self.cached_specs.get("ram_total_gb", "N/A")
             }
         except Exception:
-            return {"percent": "N/A", "used_gb": "N/A", "total_gb": "N/A"}
+            return {"percent": "N/A", "used_gb": "N/A", "total_gb": self.cached_specs.get("ram_total_gb", "N/A")}
 
     def get_disk_metrics(self):
         """Returns Disk usage percentage and total/used space for the main partition, plus read/write speeds."""
@@ -63,7 +93,6 @@ class Model_4n4lyz3r:
             # Check the root partition ('/' on Linux/Mac, 'C:\\' on Windows)
             path = '/' if self.os_platform != 'Windows' else 'C:\\'
             disk = psutil.disk_usage(path)
-            total_gb = disk.total / (1024 ** 3)
             used_gb = disk.used / (1024 ** 3)
 
             # Calculate speeds
@@ -88,13 +117,14 @@ class Model_4n4lyz3r:
             return {
                 "percent": disk.percent,
                 "used_gb": round(used_gb, 2),
-                "total_gb": round(total_gb, 2),
+                "total_gb": self.cached_specs.get("disk_total_gb", "N/A"),
                 "read_speed_mb": round(read_speed_mb, 2),
                 "write_speed_mb": round(write_speed_mb, 2)
             }
         except Exception:
             return {
-                "percent": "N/A", "used_gb": "N/A", "total_gb": "N/A",
+                "percent": "N/A", "used_gb": "N/A",
+                "total_gb": self.cached_specs.get("disk_total_gb", "N/A"),
                 "read_speed_mb": "N/A", "write_speed_mb": "N/A"
             }
 
@@ -137,12 +167,12 @@ class Model_4n4lyz3r:
                 return {
                     "percent": round(gpu.load * 100, 1),
                     "memory_used": round(gpu.memoryUsed, 1),
-                    "memory_total": round(gpu.memoryTotal, 1)
+                    "memory_total": self.cached_specs.get("gpu_total_mb", "N/A")
                 }
         except Exception:
             pass
 
-        return {"percent": "N/A", "memory_used": "N/A", "memory_total": "N/A"}
+        return {"percent": "N/A", "memory_used": "N/A", "memory_total": self.cached_specs.get("gpu_total_mb", "N/A")}
 
     def get_battery_metrics(self):
         """Returns battery percentage, plugged status, and time left."""
@@ -227,7 +257,25 @@ class Model_4n4lyz3r:
         Fetches active TCP/UDP connections.
         Can be resource-intensive, should be polled infrequently (e.g., 10s).
         Requires elevated privileges on some OSs to see all connections.
+        Masks public external IPs for privacy.
         """
+        def _mask_ip(ip_str):
+            if not ip_str or ip_str == "N/A":
+                return "N/A"
+            try:
+                ip_obj = ipaddress.ip_address(ip_str)
+                # If it's a private network, loopback, etc., leave it fully visible
+                if ip_obj.is_private or ip_obj.is_loopback:
+                    return ip_str
+                # Otherwise, mask the last octet (or equivalent for IPv6)
+                if ip_obj.version == 4:
+                    parts = ip_str.split('.')
+                    return f"{parts[0]}.{parts[1]}.{parts[2]}.***"
+                else:
+                    return "External IPv6 Masked"
+            except ValueError:
+                return ip_str
+
         try:
             # Only grab a limited number to avoid massive payloads
             max_conns = 100
@@ -237,8 +285,16 @@ class Model_4n4lyz3r:
             for c in psutil.net_connections(kind='inet'):
                 # Format: family, type, laddr, raddr, status, pid
                 if c.status in ['ESTABLISHED', 'LISTEN']:
-                    local = f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else "N/A"
-                    remote = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "N/A"
+                    # Mask remote IPs
+                    l_ip = c.laddr.ip if c.laddr else "N/A"
+                    l_port = c.laddr.port if c.laddr else ""
+                    local = f"{l_ip}:{l_port}" if l_ip != "N/A" else "N/A"
+
+                    r_ip = c.raddr.ip if c.raddr else "N/A"
+                    r_port = c.raddr.port if c.raddr else ""
+                    masked_r_ip = _mask_ip(r_ip)
+                    remote = f"{masked_r_ip}:{r_port}" if r_ip != "N/A" else "N/A"
+
                     conns.append({
                         "type": "TCP" if c.type == 1 else "UDP",
                         "local": local,

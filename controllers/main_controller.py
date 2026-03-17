@@ -1,5 +1,13 @@
 import threading
 import time
+import gc
+try:
+    import pystray
+    _HAS_PYSTRAY = True
+except Exception:
+    _HAS_PYSTRAY = False
+
+from PIL import Image, ImageDraw, ImageFont
 from models.system_monitor import Model_4n4lyz3r
 from views.main_window import View_4n4lyz3r
 from views.mini_widget import MiniWidget_4n4lyz3r
@@ -9,7 +17,7 @@ class Controller_4n4lyz3r:
     """
     Main Controller for 4n4lyz3r.
     Handles the synchronization between the Model_4n4lyz3r and the View_4n4lyz3r.
-    Implements multi-threading and smart polling to prevent GUI blocking.
+    Implements multi-threading, headless tray mode, and explicit GC.
     """
     def __init__(self):
         self.model = Model_4n4lyz3r()
@@ -17,7 +25,10 @@ class Controller_4n4lyz3r:
         self.mini_widget = None
         self.logger = Logger_4n4lyz3r()
         self.is_pip_mode = False
+        self.is_tray_mode = False
         self.running = True
+        self.ui_update_job = None
+        self.tray_icon = None
 
         # Thread lock for safely updating shared metrics dictionary
         self.metrics_lock = threading.Lock()
@@ -139,19 +150,97 @@ class Controller_4n4lyz3r:
             self.mini_widget = MiniWidget_4n4lyz3r(self.view, self.restore_main_window)
 
     def restore_main_window(self):
-        """Restores the main full dashboard window."""
+        """Restores the main full dashboard window from PIP."""
         self.is_pip_mode = False
         self.view.deiconify()  # Show main window
 
+    def _create_tray_icon(self):
+        """Programmatically generates a minimalist dark/neon-green icon for the tray."""
+        # Create a 64x64 square
+        image = Image.new('RGB', (64, 64), color=(18, 18, 18))  # #121212
+        dc = ImageDraw.Draw(image)
+        # Draw a neon green border
+        dc.rectangle([0, 0, 63, 63], outline=(0, 255, 170), width=4)  # #00FFAA
+
+        try:
+            # Try to load a generic sans-serif font
+            font = ImageFont.truetype("arial.ttf", 48)
+        except Exception:
+            # Fallback to default
+            font = ImageFont.load_default()
+
+        # Draw the "4"
+        text = "4"
+        bbox = dc.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        x = (64 - text_w) / 2
+        # Adjust Y slightly depending on font rendering, simple center is fine for default
+        y = (64 - text_h) / 2 - 8
+        dc.text((x, y), text, fill=(0, 255, 170), font=font)
+
+        return image
+
+    def minimize_to_tray(self):
+        """Hides the main window, cancels UI updates, explicitly triggers GC, and spawns the tray icon."""
+        self.view.withdraw()
+        if self.is_pip_mode and self.mini_widget:
+            self.mini_widget.destroy()
+            self.is_pip_mode = False
+
+        self.is_tray_mode = True
+
+        # Suspend the GUI loop
+        if self.ui_update_job is not None:
+            self.view.after_cancel(self.ui_update_job)
+            self.ui_update_job = None
+
+        # Explicit garbage collection to prevent memory leaks during long background uptimes
+        gc.collect()
+
+        # Spawn the tray icon in a separate thread (pystray blocks)
+        if _HAS_PYSTRAY:
+            def tray_setup():
+                menu = pystray.Menu(
+                    pystray.MenuItem("Restore 4n4lyz3r", self.restore_from_tray, default=True),
+                    pystray.MenuItem("Quit", self.on_closing)
+                )
+                image = self._create_tray_icon()
+                self.tray_icon = pystray.Icon("4n4lyz3r", image, "4n4lyz3r - Monitoring", menu)
+                self.tray_icon.run()
+
+            threading.Thread(target=tray_setup, daemon=True).start()
+        else:
+            self.logger.log_info("System tray is not supported in this environment. Running headless.")
+
+    def restore_from_tray(self, icon=None, item=None):
+        """Restores the main window from the system tray and resumes UI updates."""
+        if self.tray_icon:
+            self.tray_icon.stop()
+            self.tray_icon = None
+
+        self.is_tray_mode = False
+
+        # Schedule the UI restore on the main Tkinter thread to prevent cross-thread crashes
+        def _do_restore():
+            self.view.deiconify()
+            self.update_ui_loop()
+
+        self.view.after(0, _do_restore)
+
     def start(self):
         """Starts the main application loop and the UI update polling."""
-        # Clean up threads on exit
-        self.view.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Intercept the 'X' button to minimize to tray instead of quitting
+        self.view.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
         self.update_ui_loop()
         self.view.mainloop()
 
     def update_ui_loop(self):
         """Periodically refreshes the active UI from the shared metrics dictionary."""
+        # If in tray mode, do not render UI (saves CPU/GPU)
+        if self.is_tray_mode:
+            return
+
         with self.metrics_lock:
             current_metrics = self.metrics.copy()
 
@@ -171,9 +260,17 @@ class Controller_4n4lyz3r:
             self.view.update_ui(current_metrics)
 
         # Refresh UI every 1 second (this doesn't block as data fetching is threaded)
-        self.view.after(1000, self.update_ui_loop)
+        self.ui_update_job = self.view.after(1000, self.update_ui_loop)
 
-    def on_closing(self):
-        """Gracefully shuts down the background threads."""
+    def on_closing(self, icon=None, item=None):
+        """Gracefully shuts down the application and background threads."""
         self.running = False
-        self.view.destroy()
+        if self.tray_icon:
+            self.tray_icon.stop()
+
+        # Ensure UI destruction happens on the main thread safely
+        def _do_close():
+            self.view.quit()
+            self.view.destroy()
+
+        self.view.after(0, _do_close)
