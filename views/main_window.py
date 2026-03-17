@@ -31,17 +31,28 @@ class View_4n4lyz3r(ctk.CTk):
         )
         self.title_label.pack(side="left")
 
-        # Subtitle
-        self.subtitle_label = ctk.CTkLabel(
-            self.header_frame, text="SYSTEM HEALTH DASHBOARD", font=("Helvetica", 14), text_color="#555555"
+        # Battery Status Label (dynamically shown/hidden)
+        self.battery_label = ctk.CTkLabel(
+            self.header_frame, text="", font=("Helvetica", 12), text_color="#FFFFFF", fg_color="#333333", corner_radius=5
         )
-        self.subtitle_label.pack(side="right", pady=10)
+        self.battery_label.pack(side="right", padx=(10, 0), pady=10, ipadx=10, ipady=5)
 
-        # Main Grid Frame for widgets
-        self.main_grid = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_grid.pack(expand=True, fill="both", padx=30, pady=10)
+        # PIP / Mini-Widget Button
+        self.pip_button = ctk.CTkButton(
+            self.header_frame, text="⛶ PIP Mode", width=80, height=28,
+            fg_color="#00FFAA", text_color="#121212", hover_color="#00CC88"
+        )
+        self.pip_button.pack(side="right", padx=(10, 0), pady=10)
 
-        # Grid Configuration (2x2 Layout, and an extra row for temps/fans)
+        # Main Content Frame (to handle grid + processes list)
+        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.content_frame.pack(expand=True, fill="both", padx=30, pady=10)
+
+        # Main Grid Frame for hardware widgets
+        self.main_grid = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        self.main_grid.pack(side="left", expand=True, fill="both", padx=(0, 10))
+
+        # Grid Configuration (2x3 Layout now)
         self.main_grid.columnconfigure(0, weight=1)
         self.main_grid.columnconfigure(1, weight=1)
 
@@ -52,12 +63,18 @@ class View_4n4lyz3r(ctk.CTk):
         self.ram_widget = Widget_4n4lyz3r(self.main_grid, title="RAM USAGE", has_progress=True)
         self.ram_widget.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-        self.disk_widget = Widget_4n4lyz3r(self.main_grid, title="DISK HEALTH", has_progress=True)
+        self.disk_widget = Widget_4n4lyz3r(self.main_grid, title="DISK IO", has_progress=True)
         self.disk_widget.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+
+        self.net_widget = Widget_4n4lyz3r(self.main_grid, title="NETWORK", has_progress=False)
+        self.net_widget.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+
+        self.gpu_widget = Widget_4n4lyz3r(self.main_grid, title="GPU USAGE", has_progress=True)
+        self.gpu_widget.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
 
         # Bottom row for Temperature and Fan
         self.bottom_row = ctk.CTkFrame(self.main_grid, fg_color="transparent")
-        self.bottom_row.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+        self.bottom_row.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
         self.bottom_row.columnconfigure(0, weight=1)
         self.bottom_row.columnconfigure(1, weight=1)
 
@@ -66,6 +83,20 @@ class View_4n4lyz3r(ctk.CTk):
 
         self.fan_widget = Widget_4n4lyz3r(self.bottom_row, title="FAN RPM", has_progress=False)
         self.fan_widget.grid(row=0, column=1, padx=5, pady=0, sticky="nsew")
+
+        # Top Processes Right Panel
+        self.proc_frame = ctk.CTkFrame(self.content_frame, fg_color="#1E1E1E", width=250, corner_radius=10)
+        self.proc_frame.pack(side="right", fill="y", padx=(10, 0))
+        self.proc_frame.pack_propagate(False)
+
+        self.proc_title = ctk.CTkLabel(self.proc_frame, text="TOP RESOURCE HOGS", font=("Helvetica", 12, "bold"), text_color="#00FFAA")
+        self.proc_title.pack(pady=10)
+
+        self.proc_labels = []
+        for i in range(5):
+            lbl = ctk.CTkLabel(self.proc_frame, text="...", font=("Consolas", 10), text_color="#A9A9A9", anchor="w", justify="left")
+            lbl.pack(fill="x", padx=10, pady=5)
+            self.proc_labels.append(lbl)
 
         # Warning/Info Footer
         self.footer_label = ctk.CTkLabel(
@@ -126,3 +157,56 @@ class View_4n4lyz3r(ctk.CTk):
         self.fan_widget.update_data(
             f"{fan_val} RPM" if fan_val != 'N/A' else "🔒 N/A"
         )
+
+        # Update Network
+        net_dict = metrics.get('network', {})
+        up_mb = net_dict.get('up_speed_mb', 'N/A')
+        down_mb = net_dict.get('down_speed_mb', 'N/A')
+        self.net_widget.update_data(
+            f"DL: {down_mb} MB/s",
+            subvalue_text=f"UL: {up_mb} MB/s" if up_mb != 'N/A' else ""
+        )
+
+        # Update GPU
+        gpu_dict = metrics.get('gpu', {})
+        gpu_pct = gpu_dict.get('percent', 'N/A')
+        gpu_used = gpu_dict.get('memory_used', 'N/A')
+        gpu_total = gpu_dict.get('memory_total', 'N/A')
+        self.gpu_widget.update_data(
+            f"{gpu_pct}%" if gpu_pct != 'N/A' else 'N/A',
+            percent=gpu_pct if gpu_pct != 'N/A' else 0,
+            subvalue_text=f"VRAM: {gpu_used} MB / {gpu_total} MB" if gpu_pct != 'N/A' else "GPU: N/A"
+        )
+
+        # Update Battery
+        bat_dict = metrics.get('battery')
+        if bat_dict:
+            bat_pct = bat_dict.get('percent', 0)
+            plugged = bat_dict.get('power_plugged', False)
+            secsleft = bat_dict.get('secsleft', "N/A")
+
+            icon = "🔌" if plugged else "🔋"
+            text_val = f"{icon} {bat_pct}%"
+
+            if not plugged and isinstance(secsleft, (int, float)) and secsleft > 0:
+                # Convert seconds to HH:MM format
+                hours, remainder = divmod(secsleft, 3600)
+                minutes, _ = divmod(remainder, 60)
+                text_val += f" ({int(hours)}h {int(minutes)}m)"
+
+            self.battery_label.configure(text=text_val)
+        else:
+            # Hide on desktop / if not available
+            self.battery_label.pack_forget()
+
+        # Update Top Processes
+        procs = metrics.get('top_processes', [])
+        for i, lbl in enumerate(self.proc_labels):
+            if i < len(procs):
+                p = procs[i]
+                name = p.get('name', 'Unknown')[:10].ljust(10)
+                cpu = p.get('cpu_percent', 0)
+                mem = p.get('memory_percent', 0)
+                lbl.configure(text=f"{name} | {cpu:.1f}% CPU | {mem:.1f}% RAM")
+            else:
+                lbl.configure(text="")
