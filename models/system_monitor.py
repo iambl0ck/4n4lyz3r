@@ -222,6 +222,36 @@ class Model_4n4lyz3r:
         except Exception:
             return "N/A"
 
+    def get_net_connections(self):
+        """
+        Fetches active TCP/UDP connections.
+        Can be resource-intensive, should be polled infrequently (e.g., 10s).
+        Requires elevated privileges on some OSs to see all connections.
+        """
+        try:
+            # Only grab a limited number to avoid massive payloads
+            max_conns = 100
+            conns = []
+            # psutil.net_connections requires root on some systems for 'all' or specific types
+            # 'inet' gets IPv4 and IPv6
+            for c in psutil.net_connections(kind='inet'):
+                # Format: family, type, laddr, raddr, status, pid
+                if c.status in ['ESTABLISHED', 'LISTEN']:
+                    local = f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else "N/A"
+                    remote = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "N/A"
+                    conns.append({
+                        "type": "TCP" if c.type == 1 else "UDP",
+                        "local": local,
+                        "remote": remote,
+                        "status": c.status,
+                        "pid": c.pid or "N/A"
+                    })
+                if len(conns) >= max_conns:
+                    break
+            return conns
+        except (psutil.AccessDenied, Exception):
+            return []
+
     def get_all_metrics(self):
         """Fetches and aggregates basic (synchronous) metrics into a single dictionary."""
         # This was used in the MVP, but the controller will use individual async calls.

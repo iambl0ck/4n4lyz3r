@@ -44,9 +44,17 @@ class View_4n4lyz3r(ctk.CTk):
         )
         self.pip_button.pack(side="right", padx=(10, 0), pady=10)
 
-        # Main Content Frame (to handle grid + processes list)
-        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.content_frame.pack(expand=True, fill="both", padx=30, pady=10)
+        # Main Content Frame (Tabview)
+        self.tabview = ctk.CTkTabview(self, fg_color="#1E1E1E", segmented_button_selected_color="#00FFAA", segmented_button_selected_hover_color="#00CC88")
+        self.tabview.pack(expand=True, fill="both", padx=30, pady=10)
+
+        # Tabs
+        self.tab_dashboard = self.tabview.add("Dashboard")
+        self.tab_netsec = self.tabview.add("Net-Sec")
+
+        # Dashboard Tab Content Frame
+        self.content_frame = ctk.CTkFrame(self.tab_dashboard, fg_color="transparent")
+        self.content_frame.pack(expand=True, fill="both")
 
         # Main Grid Frame for hardware widgets
         self.main_grid = ctk.CTkFrame(self.content_frame, fg_color="transparent")
@@ -104,6 +112,42 @@ class View_4n4lyz3r(ctk.CTk):
             font=("Helvetica", 12), text_color="#808080"
         )
         self.footer_label.pack(side="bottom", pady=20)
+
+        # Net-Sec Tab Content Frame
+        self.netsec_frame = ctk.CTkFrame(self.tab_netsec, fg_color="transparent")
+        self.netsec_frame.pack(expand=True, fill="both")
+
+        self.netsec_title = ctk.CTkLabel(self.netsec_frame, text="ACTIVE NETWORK CONNECTIONS", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
+        self.netsec_title.pack(pady=10)
+
+        # Add a scrollable frame for connections
+        self.connections_list = ctk.CTkScrollableFrame(self.netsec_frame, fg_color="#121212", corner_radius=10)
+        self.connections_list.pack(expand=True, fill="both", padx=10, pady=10)
+
+        # Toast Notification Frame (hidden initially)
+        self.toast_frame = ctk.CTkFrame(self, fg_color="#FF4444", corner_radius=10, width=300, height=60)
+        self.toast_label = ctk.CTkLabel(self.toast_frame, text="", font=("Helvetica", 14, "bold"), text_color="#FFFFFF")
+        self.toast_label.pack(expand=True, padx=20, pady=10)
+        self._toast_timer = None
+
+        # Cache for Net-Sec to avoid unnecessary redraws
+        self._last_net_conns = None
+
+    def show_toast(self, message):
+        """Displays a sliding toast notification for alerts."""
+        self.toast_label.configure(text=message)
+        # Place it near bottom right
+        self.toast_frame.place(relx=0.98, rely=0.95, anchor="se")
+
+        if self._toast_timer is not None:
+            self.after_cancel(self._toast_timer)
+
+        # Hide after 4 seconds
+        self._toast_timer = self.after(4000, self.hide_toast)
+
+    def hide_toast(self):
+        """Hides the toast notification."""
+        self.toast_frame.place_forget()
 
     def update_ui(self, metrics):
         """
@@ -210,3 +254,31 @@ class View_4n4lyz3r(ctk.CTk):
                 lbl.configure(text=f"{name} | {cpu:.1f}% CPU | {mem:.1f}% RAM")
             else:
                 lbl.configure(text="")
+
+        # Update Net-Sec Connections (if the tab is visible)
+        # To avoid massive UI updates, only refresh if the list changed
+        conns = metrics.get('net_connections', [])
+
+        if self.tabview.get() == "Net-Sec":
+            # Check if the list of connections actually changed
+            if conns != self._last_net_conns:
+                self._last_net_conns = conns.copy() if conns else []
+
+                # Clear existing children
+                for widget in self.connections_list.winfo_children():
+                    widget.destroy()
+
+                # Repopulate
+                for c in conns:
+                    t = c.get('type', '')
+                    l = c.get('local', '')
+                    r = c.get('remote', '')
+                    s = c.get('status', '')
+                    pid = c.get('pid', '')
+                    row_text = f"[{t}] {l}  =>  {r}  |  {s}  |  PID: {pid}"
+
+                    # Use slightly different colors based on status
+                    t_color = "#00FFAA" if s == "ESTABLISHED" else "#A9A9A9"
+
+                    lbl = ctk.CTkLabel(self.connections_list, text=row_text, font=("Consolas", 12), text_color=t_color, anchor="w")
+                    lbl.pack(fill="x", pady=2, padx=5)
