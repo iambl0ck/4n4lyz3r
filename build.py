@@ -27,7 +27,15 @@ def main():
         "--onefile",
         "--windowed", # No console, boots straight into background/UI
         "--name=4n4lyz3r",
-        f"--add-data={add_data_ctk}"
+        f"--add-data={add_data_ctk}",
+        # Hidden imports for reflection/dynamic modules
+        "--hidden-import=psutil",
+        "--hidden-import=pystray",
+        "--hidden-import=PIL",
+        "--hidden-import=PIL._tkinter_finder",
+        "--hidden-import=GPUtil",
+        "--hidden-import=http.server",
+        "--hidden-import=urllib.request"
     ]
 
     # Platform-specific configurations
