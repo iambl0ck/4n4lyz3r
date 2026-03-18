@@ -2,7 +2,7 @@ import json
 import urllib.request
 from urllib.error import URLError
 
-CURRENT_VERSION = "v1.0.0"
+CURRENT_VERSION = "v1.0.1-stable"
 REPO_API_URL = "https://api.github.com/repos/iambl0ck/4n4lyz3r/releases/latest"
 
 class OTAUpdateChecker:
