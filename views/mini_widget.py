@@ -12,7 +12,7 @@ class MiniWidget_4n4lyz3r(ctk.CTkToplevel):
 
         # Window configuration
         self.title("4n4lyz3r PIP")
-        self.geometry("250x100")
+        self.geometry("280x100") # Increased width slightly for 'OEM Locked' and 'TEMP' text
 
         # Make borderless and always on top
         self.overrideredirect(True)
@@ -28,21 +28,21 @@ class MiniWidget_4n4lyz3r(ctk.CTkToplevel):
         self.main_frame = ctk.CTkFrame(self, fg_color="#1E1E1E", corner_radius=10, border_width=1, border_color="#00FFAA")
         self.main_frame.pack(expand=True, fill="both", padx=5, pady=5)
 
-        # Grid setup
+        # Grid setup (Add weight 2 to last column to give temp/OEM Locked more space)
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.columnconfigure(1, weight=1)
-        self.main_frame.columnconfigure(2, weight=1)
+        self.main_frame.columnconfigure(2, weight=2)
         self.main_frame.rowconfigure(0, weight=1)
         self.main_frame.rowconfigure(1, weight=1)
 
         # Labels
         font_label = ("Helvetica", 10, "bold")
-        font_value = ("Helvetica", 14, "bold")
+        font_value = ("Helvetica", 12, "bold") # Slightly smaller to prevent PIP overflow on "OEM Locked"
 
         self.lbl_cpu_t = ctk.CTkLabel(self.main_frame, text="CPU", font=font_label, text_color="#A9A9A9")
-        self.lbl_cpu_t.grid(row=0, column=0, pady=(10, 0))
+        self.lbl_cpu_t.grid(row=0, column=0, pady=(10, 0), padx=(5, 0))
         self.lbl_cpu_v = ctk.CTkLabel(self.main_frame, text="0%", font=font_value, text_color="#FFFFFF")
-        self.lbl_cpu_v.grid(row=1, column=0, pady=(0, 10))
+        self.lbl_cpu_v.grid(row=1, column=0, pady=(0, 10), padx=(5, 0))
 
         self.lbl_ram_t = ctk.CTkLabel(self.main_frame, text="RAM", font=font_label, text_color="#A9A9A9")
         self.lbl_ram_t.grid(row=0, column=1, pady=(10, 0))
@@ -50,9 +50,9 @@ class MiniWidget_4n4lyz3r(ctk.CTkToplevel):
         self.lbl_ram_v.grid(row=1, column=1, pady=(0, 10))
 
         self.lbl_temp_t = ctk.CTkLabel(self.main_frame, text="TEMP", font=font_label, text_color="#A9A9A9")
-        self.lbl_temp_t.grid(row=0, column=2, pady=(10, 0))
+        self.lbl_temp_t.grid(row=0, column=2, pady=(10, 0), padx=(0, 5))
         self.lbl_temp_v = ctk.CTkLabel(self.main_frame, text="N/A", font=font_value, text_color="#FFFFFF")
-        self.lbl_temp_v.grid(row=1, column=2, pady=(0, 10))
+        self.lbl_temp_v.grid(row=1, column=2, pady=(0, 10), padx=(0, 5))
 
         # Restore Button overlay (top right)
         self.btn_restore = ctk.CTkButton(
@@ -86,7 +86,11 @@ class MiniWidget_4n4lyz3r(ctk.CTkToplevel):
         """Updates the minimalist text values."""
         self.lbl_cpu_v.configure(text=f"{cpu_val}%" if cpu_val != 'N/A' else "N/A")
         self.lbl_ram_v.configure(text=f"{ram_val}%" if ram_val != 'N/A' else "N/A")
-        self.lbl_temp_v.configure(text=f"{temp_val}°C" if temp_val != 'N/A' else "N/A")
+
+        if temp_val in ["N/A", "OEM Locked"]:
+            self.lbl_temp_v.configure(text=str(temp_val))
+        else:
+            self.lbl_temp_v.configure(text=f"{temp_val}°C")
 
     def restore(self):
         """Triggered when the restore button is clicked."""

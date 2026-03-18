@@ -2,6 +2,7 @@ import subprocess
 import platform
 import os
 import re
+from utils.helpers import run_hidden_subprocess
 
 class HardwareHealthAnalyzer:
     """
@@ -29,25 +30,23 @@ class HardwareHealthAnalyzer:
         try:
             if self.os_platform == "Windows":
                 # wmic path Win32_Battery get DesignCapacity, FullChargeCapacity
-                output = subprocess.check_output(
-                    ['wmic', 'path', 'Win32_Battery', 'get', 'DesignCapacity,FullChargeCapacity'],
-                    text=True, stderr=subprocess.DEVNULL
-                )
-                lines = [line.strip() for line in output.split('\n') if line.strip()]
-                if len(lines) > 1:
-                    parts = lines[1].split()
-                    if len(parts) >= 2:
-                        design = float(parts[0])
-                        full = float(parts[1])
-                        if design > 0:
-                            health_pct = (full / design) * 100.0
-                            health_pct = min(100.0, health_pct) # Sometimes full > design slightly
-                            result = {
-                                "status": "Found",
-                                "wear_level": round(100.0 - health_pct, 1),
-                                "health_pct": round(health_pct, 1),
-                                "grade": self._get_battery_health_grade(health_pct)
-                            }
+                output_res = run_hidden_subprocess(['wmic', 'path', 'Win32_Battery', 'get', 'DesignCapacity,FullChargeCapacity'], timeout=3)
+                if output_res.returncode == 0:
+                    lines = [line.strip() for line in output_res.stdout.split('\n') if line.strip()]
+                    if len(lines) > 1:
+                        parts = lines[1].split()
+                        if len(parts) >= 2:
+                            design = float(parts[0])
+                            full = float(parts[1])
+                            if design > 0:
+                                health_pct = (full / design) * 100.0
+                                health_pct = min(100.0, health_pct) # Sometimes full > design slightly
+                                result = {
+                                    "status": "Found",
+                                    "wear_level": round(100.0 - health_pct, 1),
+                                    "health_pct": round(health_pct, 1),
+                                    "grade": self._get_battery_health_grade(health_pct)
+                                }
 
             elif self.os_platform == "Linux":
                 # Check /sys/class/power_supply/BAT*
@@ -93,28 +92,27 @@ class HardwareHealthAnalyzer:
 
             elif self.os_platform == "Darwin":
                 # system_profiler SPPowerDataType
-                output = subprocess.check_output(
-                    ['system_profiler', 'SPPowerDataType'],
-                    text=True, stderr=subprocess.DEVNULL
-                )
+                output_res = run_hidden_subprocess(['system_profiler', 'SPPowerDataType'], timeout=3)
 
-                # We can grab maximum capacity % directly on newer macOS or parse full/design
-                max_cap_match = re.search(r"Maximum Capacity:\s+(\d+)%", output)
-                if max_cap_match:
-                    health_pct = float(max_cap_match.group(1))
-                    result = {
-                        "status": "Found",
-                        "wear_level": round(100.0 - health_pct, 1),
-                        "health_pct": round(health_pct, 1),
-                        "grade": self._get_battery_health_grade(health_pct)
-                    }
-                else:
-                    # Older macOS parsing (Charge Information: Full Charge Capacity)
-                    full_match = re.search(r"Full Charge Capacity \(mAh\):\s+(\d+)", output)
-                    if full_match:
-                        # We might not have design capacity easily without ioreg,
-                        # but if we just have full, we'll mark as found but unknown health.
-                        result = {"status": "Found", "wear_level": "N/A", "health_pct": "N/A", "grade": "Unknown"}
+                if output_res.returncode == 0:
+                    output = output_res.stdout
+                    # We can grab maximum capacity % directly on newer macOS or parse full/design
+                    max_cap_match = re.search(r"Maximum Capacity:\s+(\d+)%", output)
+                    if max_cap_match:
+                        health_pct = float(max_cap_match.group(1))
+                        result = {
+                            "status": "Found",
+                            "wear_level": round(100.0 - health_pct, 1),
+                            "health_pct": round(health_pct, 1),
+                            "grade": self._get_battery_health_grade(health_pct)
+                        }
+                    else:
+                        # Older macOS parsing (Charge Information: Full Charge Capacity)
+                        full_match = re.search(r"Full Charge Capacity \(mAh\):\s+(\d+)", output)
+                        if full_match:
+                            # We might not have design capacity easily without ioreg,
+                            # but if we just have full, we'll mark as found but unknown health.
+                            result = {"status": "Found", "wear_level": "N/A", "health_pct": "N/A", "grade": "Unknown"}
         except Exception:
             pass
 
@@ -129,82 +127,78 @@ class HardwareHealthAnalyzer:
         try:
             if self.os_platform == "Windows":
                 # wmic diskdrive get Model, Status
-                output = subprocess.check_output(
-                    ['wmic', 'diskdrive', 'get', 'Model,Status'],
-                    text=True, stderr=subprocess.DEVNULL
-                )
-                lines = [line.strip() for line in output.split('\n') if line.strip()]
-                # First line is header
-                for line in lines[1:]:
-                    # Status is typically the last word (OK, Pred Fail, Error, etc.)
-                    parts = line.rsplit(maxsplit=1)
-                    if len(parts) == 2:
-                        model = parts[0].strip()
-                        status = parts[1].strip().upper()
+                output_res = run_hidden_subprocess(['wmic', 'diskdrive', 'get', 'Model,Status'], timeout=3)
+                if output_res.returncode == 0:
+                    lines = [line.strip() for line in output_res.stdout.split('\n') if line.strip()]
+                    # First line is header
+                    for line in lines[1:]:
+                        # Status is typically the last word (OK, Pred Fail, Error, etc.)
+                        parts = line.rsplit(maxsplit=1)
+                        if len(parts) == 2:
+                            model = parts[0].strip()
+                            status = parts[1].strip().upper()
 
-                        grade = "🟢 Healthy" if status == "OK" else ("🔴 Failing" if "FAIL" in status else "🟡 Warning")
-                        disks.append({
-                            "model": model,
-                            "status": status,
-                            "grade": grade
-                        })
+                            grade = "🟢 Healthy" if status == "OK" else ("🔴 Failing" if "FAIL" in status else "🟡 Warning")
+                            disks.append({
+                                "model": model,
+                                "status": status,
+                                "grade": grade
+                            })
 
             elif self.os_platform == "Linux" or self.os_platform == "Darwin":
                 # Check for smartctl
                 try:
-                    subprocess.check_call(['smartctl', '-h'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except FileNotFoundError:
+                    check_res = run_hidden_subprocess(['smartctl', '-h'], timeout=2)
+                    if check_res.returncode not in [0, 1]: # Depending on OS smartctl -h might exit 1
+                        raise FileNotFoundError
+                except Exception:
                     return [{"model": "Unknown", "status": "smartmontools not installed", "grade": "Unknown"}]
 
                 target_disks = []
 
                 if self.os_platform == "Linux":
                     # Use lsblk to find block devices
-                    output = subprocess.check_output(
-                        ['lsblk', '-nd', '-o', 'NAME,MODEL'],
-                        text=True, stderr=subprocess.DEVNULL
-                    )
-                    lines = [line.strip() for line in output.split('\n') if line.strip()]
-                    for line in lines:
-                        parts = line.split(maxsplit=1)
-                        if len(parts) >= 1:
-                            dev = parts[0]
-                            model = parts[1] if len(parts) > 1 else dev
-                            target_disks.append((f'/dev/{dev}', model))
+                    output_res = run_hidden_subprocess(['lsblk', '-nd', '-o', 'NAME,MODEL'], timeout=3)
+                    if output_res.returncode == 0:
+                        lines = [line.strip() for line in output_res.stdout.split('\n') if line.strip()]
+                        for line in lines:
+                            parts = line.split(maxsplit=1)
+                            if len(parts) >= 1:
+                                dev = parts[0]
+                                model = parts[1] if len(parts) > 1 else dev
+                                target_disks.append((f'/dev/{dev}', model))
                 else:
                     # macOS: Use diskutil list
-                    output = subprocess.check_output(
-                        ['diskutil', 'list'],
-                        text=True, stderr=subprocess.DEVNULL
-                    )
-                    # Extract /dev/disk0, /dev/disk1, etc.
-                    for line in output.split('\n'):
-                        if line.startswith('/dev/disk') and '(internal' in line:
-                            parts = line.split()
-                            dev = parts[0]
-                            target_disks.append((dev, "macOS Internal Disk"))
+                    output_res = run_hidden_subprocess(['diskutil', 'list'], timeout=3)
+                    if output_res.returncode == 0:
+                        # Extract /dev/disk0, /dev/disk1, etc.
+                        for line in output_res.stdout.split('\n'):
+                            if line.startswith('/dev/disk') and '(internal' in line:
+                                parts = line.split()
+                                dev = parts[0]
+                                target_disks.append((dev, "macOS Internal Disk"))
 
                 for dev_path, model in target_disks:
                     try:
                         # Requires root for smartctl
-                        smart_out = subprocess.check_output(
-                            ['smartctl', '-H', dev_path],
-                            text=True, stderr=subprocess.DEVNULL
-                        )
-                        if "PASSED" in smart_out.upper() or "OK" in smart_out.upper():
-                            grade = "🟢 Healthy"
-                            status = "OK"
+                        smart_out_res = run_hidden_subprocess(['smartctl', '-H', dev_path], timeout=5)
+                        if smart_out_res.returncode == 0:
+                            if "PASSED" in smart_out_res.stdout.upper() or "OK" in smart_out_res.stdout.upper():
+                                grade = "🟢 Healthy"
+                                status = "OK"
+                            else:
+                                grade = "🔴 Failing"
+                                status = "FAILED"
                         else:
-                            grade = "🔴 Failing"
-                            status = "FAILED"
-                    except subprocess.CalledProcessError as e:
-                        # smartctl exits with non-zero if disk is failing or permission denied
-                        if e.returncode == 1 or e.returncode == 2:
-                            status = "Permission Denied (Run as Root)"
-                            grade = "Unknown"
-                        else:
-                            status = "Warning/Failing"
-                            grade = "🔴 Failing"
+                            if smart_out_res.returncode == 1 or smart_out_res.returncode == 2:
+                                status = "Permission Denied (Run as Root)"
+                                grade = "Unknown"
+                            else:
+                                status = "Warning/Failing"
+                                grade = "🔴 Failing"
+                    except Exception:
+                        status = "Unknown"
+                        grade = "Unknown"
 
                     disks.append({
                         "model": model,

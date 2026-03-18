@@ -51,8 +51,14 @@ class View_4n4lyz3r(ctk.CTk):
         self.pip_button.pack(side="right", padx=(10, 0), pady=10)
 
         # Main Content Frame (Tabview)
-        self.tabview = ctk.CTkTabview(self, fg_color="#1E1E1E", segmented_button_selected_color="#00FFAA", segmented_button_selected_hover_color="#00CC88")
-        self.tabview.pack(expand=True, fill="both", padx=30, pady=10)
+        # Increase internal padding and size
+        self.tabview = ctk.CTkTabview(
+            self, fg_color="#1A1A1A", corner_radius=15,
+            segmented_button_selected_color="#00FFAA",
+            segmented_button_selected_hover_color="#00CC88",
+            text_color="#FFFFFF"
+        )
+        self.tabview.pack(expand=True, fill="both", padx=40, pady=15)
 
         # Tabs
         self.tab_dashboard = self.tabview.add("Dashboard")
@@ -82,20 +88,21 @@ class View_4n4lyz3r(ctk.CTk):
         self.main_grid.columnconfigure(1, weight=1)
 
         # Widgets Initialization
+        # Added Sparklines and padded grids
         self.cpu_widget = Widget_4n4lyz3r(self.main_grid, title="CPU USAGE", has_progress=True)
-        self.cpu_widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.cpu_widget.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
 
         self.ram_widget = Widget_4n4lyz3r(self.main_grid, title="RAM USAGE", has_progress=True)
-        self.ram_widget.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        self.ram_widget.grid(row=0, column=1, padx=15, pady=15, sticky="nsew")
 
-        self.disk_widget = Widget_4n4lyz3r(self.main_grid, title="DISK IO", has_progress=True)
-        self.disk_widget.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+        self.disk_widget = Widget_4n4lyz3r(self.main_grid, title="DISK I/O", has_progress=False, has_sparkline=True, sparkline_color="#FFAA00")
+        self.disk_widget.grid(row=1, column=0, padx=15, pady=15, sticky="nsew")
 
-        self.net_widget = Widget_4n4lyz3r(self.main_grid, title="NETWORK", has_progress=False)
-        self.net_widget.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+        self.net_widget = Widget_4n4lyz3r(self.main_grid, title="NETWORK", has_progress=False, has_sparkline=True, sparkline_color="#00FFAA")
+        self.net_widget.grid(row=1, column=1, padx=15, pady=15, sticky="nsew")
 
         self.gpu_widget = Widget_4n4lyz3r(self.main_grid, title="GPU USAGE", has_progress=True)
-        self.gpu_widget.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.gpu_widget.grid(row=2, column=0, padx=15, pady=15, sticky="nsew")
 
         # Bottom row for Temperature and Fan
         self.bottom_row = ctk.CTkFrame(self.main_grid, fg_color="transparent")
@@ -110,17 +117,17 @@ class View_4n4lyz3r(ctk.CTk):
         self.fan_widget.grid(row=0, column=1, padx=5, pady=0, sticky="nsew")
 
         # Top Processes Right Panel
-        self.proc_frame = ctk.CTkFrame(self.content_frame, fg_color="#1E1E1E", width=250, corner_radius=10)
-        self.proc_frame.pack(side="right", fill="y", padx=(10, 0))
+        self.proc_frame = ctk.CTkFrame(self.content_frame, fg_color="#1E1E1E", width=300, corner_radius=15)
+        self.proc_frame.pack(side="right", fill="y", padx=(10, 0), pady=15)
         self.proc_frame.pack_propagate(False)
 
-        self.proc_title = ctk.CTkLabel(self.proc_frame, text="TOP RESOURCE HOGS", font=("Helvetica", 12, "bold"), text_color="#00FFAA")
-        self.proc_title.pack(pady=10)
+        self.proc_title = ctk.CTkLabel(self.proc_frame, text="TOP RESOURCE HOGS", font=("Helvetica", 14, "bold"), text_color="#00FFAA")
+        self.proc_title.pack(pady=20)
 
         self.proc_labels = []
         for i in range(5):
-            lbl = ctk.CTkLabel(self.proc_frame, text="...", font=("Consolas", 10), text_color="#A9A9A9", anchor="w", justify="left")
-            lbl.pack(fill="x", padx=10, pady=5)
+            lbl = ctk.CTkLabel(self.proc_frame, text="...", font=("Consolas", 12), text_color="#A9A9A9", anchor="w", justify="left")
+            lbl.pack(fill="x", padx=20, pady=10)
             self.proc_labels.append(lbl)
 
         # Warning/Info Footer
@@ -138,7 +145,10 @@ class View_4n4lyz3r(ctk.CTk):
         self.netsec_title.pack(pady=10)
 
         # Add a scrollable frame for connections
-        self.connections_list = ctk.CTkScrollableFrame(self.netsec_frame, fg_color="#121212", corner_radius=10)
+        self.connections_list = ctk.CTkScrollableFrame(
+            self.netsec_frame, fg_color="#121212", corner_radius=10,
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.connections_list.pack(expand=True, fill="both", padx=10, pady=10)
 
         # Toast Notification Frame (hidden initially)
@@ -152,12 +162,18 @@ class View_4n4lyz3r(ctk.CTk):
         self.defense_frame.pack(expand=True, fill="both")
         self.defense_title = ctk.CTkLabel(self.defense_frame, text="PROCESS MANAGER (ACTIVE HEURISTICS)", font=("Helvetica", 16, "bold"), text_color="#FF4444")
         self.defense_title.pack(pady=10)
-        self.defense_list = ctk.CTkScrollableFrame(self.defense_frame, fg_color="#121212", corner_radius=10)
+        self.defense_list = ctk.CTkScrollableFrame(
+            self.defense_frame, fg_color="#121212", corner_radius=10,
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.defense_list.pack(expand=True, fill="both", padx=10, pady=10)
         self._last_procs = None
 
         # Deep Specs Tab Content
-        self.hw_frame = ctk.CTkScrollableFrame(self.tab_hw, fg_color="transparent")
+        self.hw_frame = ctk.CTkScrollableFrame(
+            self.tab_hw, fg_color="transparent",
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.hw_frame.pack(expand=True, fill="both")
         self.hw_title = ctk.CTkLabel(self.hw_frame, text="RAW HARDWARE & FIRMWARE SPECS", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
         self.hw_title.pack(pady=10)
@@ -231,7 +247,10 @@ class View_4n4lyz3r(ctk.CTk):
         self.btn_add_node.pack(side="left", padx=10, pady=10)
 
         # Fleet Grid
-        self.fleet_grid = ctk.CTkScrollableFrame(self.fleet_frame, fg_color="transparent")
+        self.fleet_grid = ctk.CTkScrollableFrame(
+            self.fleet_frame, fg_color="transparent",
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.fleet_grid.pack(expand=True, fill="both", padx=10, pady=10)
         self._last_fleet_nodes = {}
 
@@ -333,6 +352,7 @@ class View_4n4lyz3r(ctk.CTk):
         disk_total = disk_dict.get('total_gb', 'N/A')
         read_speed_mb = disk_dict.get('read_speed_mb', 'N/A')
         write_speed_mb = disk_dict.get('write_speed_mb', 'N/A')
+        hist_r = disk_dict.get('history_r', [])
 
         disk_subvalue = f"{disk_used} GB / {disk_total} GB" if disk_pct != 'N/A' else ""
         if read_speed_mb != 'N/A' and write_speed_mb != 'N/A':
@@ -341,29 +361,33 @@ class View_4n4lyz3r(ctk.CTk):
         self.disk_widget.update_data(
             f"{disk_pct}%" if disk_pct != 'N/A' else 'N/A',
             percent=disk_pct if disk_pct != 'N/A' else 0,
-            subvalue_text=disk_subvalue
+            subvalue_text=disk_subvalue,
+            sparkline_data=hist_r
         )
 
         # Update Temperature
         temp_val = metrics.get('temperature', 'N/A')
-        # If N/A or lock icon needed, handle gracefully
-        self.temp_widget.update_data(
-            f"{temp_val}°C" if temp_val != 'N/A' else "🔒 N/A"
-        )
+        if temp_val in ["N/A", "OEM Locked"]:
+            self.temp_widget.update_data(f"🔒 {temp_val}")
+        else:
+            self.temp_widget.update_data(f"{temp_val}°C")
 
         # Update Fan
         fan_val = metrics.get('fan', 'N/A')
-        self.fan_widget.update_data(
-            f"{fan_val} RPM" if fan_val != 'N/A' else "🔒 N/A"
-        )
+        if fan_val in ["N/A", "OEM Locked"]:
+            self.fan_widget.update_data(f"🔒 {fan_val}")
+        else:
+            self.fan_widget.update_data(f"{fan_val} RPM")
 
         # Update Network
         net_dict = metrics.get('network', {})
         up_mb = net_dict.get('up_speed_mb', 'N/A')
         down_mb = net_dict.get('down_speed_mb', 'N/A')
+        hist_dl = net_dict.get('history_dl', [])
         self.net_widget.update_data(
             f"DL: {down_mb} MB/s",
-            subvalue_text=f"UL: {up_mb} MB/s" if up_mb != 'N/A' else ""
+            subvalue_text=f"UL: {up_mb} MB/s" if up_mb != 'N/A' else "",
+            sparkline_data=hist_dl
         )
 
         # Update GPU
@@ -371,6 +395,8 @@ class View_4n4lyz3r(ctk.CTk):
         gpu_pct = gpu_dict.get('percent', 'N/A')
         gpu_used = gpu_dict.get('memory_used', 'N/A')
         gpu_total = gpu_dict.get('memory_total', 'N/A')
+        gpu_name = gpu_dict.get('name', 'GPU')
+        self.gpu_widget.title_label.configure(text=str(gpu_name).upper())
         self.gpu_widget.update_data(
             f"{gpu_pct}%" if gpu_pct != 'N/A' else 'N/A',
             percent=gpu_pct if gpu_pct != 'N/A' else 0,
