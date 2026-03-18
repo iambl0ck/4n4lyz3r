@@ -145,7 +145,10 @@ class View_4n4lyz3r(ctk.CTk):
         self.netsec_title.pack(pady=10)
 
         # Add a scrollable frame for connections
-        self.connections_list = ctk.CTkScrollableFrame(self.netsec_frame, fg_color="#121212", corner_radius=10)
+        self.connections_list = ctk.CTkScrollableFrame(
+            self.netsec_frame, fg_color="#121212", corner_radius=10,
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.connections_list.pack(expand=True, fill="both", padx=10, pady=10)
 
         # Toast Notification Frame (hidden initially)
@@ -159,12 +162,18 @@ class View_4n4lyz3r(ctk.CTk):
         self.defense_frame.pack(expand=True, fill="both")
         self.defense_title = ctk.CTkLabel(self.defense_frame, text="PROCESS MANAGER (ACTIVE HEURISTICS)", font=("Helvetica", 16, "bold"), text_color="#FF4444")
         self.defense_title.pack(pady=10)
-        self.defense_list = ctk.CTkScrollableFrame(self.defense_frame, fg_color="#121212", corner_radius=10)
+        self.defense_list = ctk.CTkScrollableFrame(
+            self.defense_frame, fg_color="#121212", corner_radius=10,
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.defense_list.pack(expand=True, fill="both", padx=10, pady=10)
         self._last_procs = None
 
         # Deep Specs Tab Content
-        self.hw_frame = ctk.CTkScrollableFrame(self.tab_hw, fg_color="transparent")
+        self.hw_frame = ctk.CTkScrollableFrame(
+            self.tab_hw, fg_color="transparent",
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.hw_frame.pack(expand=True, fill="both")
         self.hw_title = ctk.CTkLabel(self.hw_frame, text="RAW HARDWARE & FIRMWARE SPECS", font=("Helvetica", 16, "bold"), text_color="#00FFAA")
         self.hw_title.pack(pady=10)
@@ -238,7 +247,10 @@ class View_4n4lyz3r(ctk.CTk):
         self.btn_add_node.pack(side="left", padx=10, pady=10)
 
         # Fleet Grid
-        self.fleet_grid = ctk.CTkScrollableFrame(self.fleet_frame, fg_color="transparent")
+        self.fleet_grid = ctk.CTkScrollableFrame(
+            self.fleet_frame, fg_color="transparent",
+            scrollbar_button_color="#2A2A2A", scrollbar_button_hover_color="#00FFAA"
+        )
         self.fleet_grid.pack(expand=True, fill="both", padx=10, pady=10)
         self._last_fleet_nodes = {}
 
@@ -355,16 +367,17 @@ class View_4n4lyz3r(ctk.CTk):
 
         # Update Temperature
         temp_val = metrics.get('temperature', 'N/A')
-        # If N/A or lock icon needed, handle gracefully
-        self.temp_widget.update_data(
-            f"{temp_val}°C" if temp_val != 'N/A' else "🔒 N/A"
-        )
+        if temp_val in ["N/A", "OEM Locked"]:
+            self.temp_widget.update_data(f"🔒 {temp_val}")
+        else:
+            self.temp_widget.update_data(f"{temp_val}°C")
 
         # Update Fan
         fan_val = metrics.get('fan', 'N/A')
-        self.fan_widget.update_data(
-            f"{fan_val} RPM" if fan_val != 'N/A' else "🔒 N/A"
-        )
+        if fan_val in ["N/A", "OEM Locked"]:
+            self.fan_widget.update_data(f"🔒 {fan_val}")
+        else:
+            self.fan_widget.update_data(f"{fan_val} RPM")
 
         # Update Network
         net_dict = metrics.get('network', {})

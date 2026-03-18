@@ -250,12 +250,18 @@ class Model_4n4lyz3r:
             return None
 
     def get_top_processes(self, limit=10):
-        """Returns top processes with Active Threat Heuristics."""
+        """Returns top processes with Active Threat Heuristics. Adjusts CPU percent relative to core count."""
         try:
             processes = []
+            num_cores = psutil.cpu_count() or 1 # Fallback to 1 to avoid division by zero
+
             for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe']):
                 try:
                     pinfo = proc.info
+                    # Adjust CPU percentage relative to max 100% instead of raw multi-core sum
+                    raw_cpu = pinfo.get('cpu_percent')
+                    pinfo['cpu_percent'] = (raw_cpu / num_cores) if raw_cpu is not None else 0.0
+
                     # Evaluate Heuristics
                     exe_path = pinfo.get('exe') or ""
                     is_suspicious = False
@@ -274,7 +280,7 @@ class Model_4n4lyz3r:
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
 
-            # Sort by CPU usage descending
+            # Sort by relative CPU usage descending
             processes.sort(key=lambda p: p['cpu_percent'] or 0, reverse=True)
             return processes[:limit]
         except Exception:
@@ -294,13 +300,16 @@ class Model_4n4lyz3r:
                             return round(celsius, 1)
                 except Exception:
                     pass
+                # Strict fallback for Windows locked WMI/BIOS configurations
+                return "OEM Locked"
 
             if not hasattr(psutil, "sensors_temperatures"):
                 return "N/A"
 
             temps = psutil.sensors_temperatures()
             if not temps:
-                return "N/A"
+                # Same OEM locked fallback check on Unix
+                return "OEM Locked"
 
             if 'coretemp' in temps:
                 sum_temp = sum([t.current for t in temps['coretemp']])
@@ -311,29 +320,34 @@ class Model_4n4lyz3r:
             if first_sensor_list:
                 return round(first_sensor_list[0].current, 1)
 
-            return "N/A"
+            return "OEM Locked"
 
         except Exception:
-            return "N/A"
+            return "OEM Locked"
 
     def get_fan_speeds(self):
         """Attempts to fetch fan speeds (RPM)."""
         try:
+            if self.os_platform == 'Windows':
+                # There is no universally supported command line wmic/fan speed getter without OpenHardwareMonitor
+                # or deep proprietary driver hooks. Attempt psutil first, if unavailable, fallback.
+                pass
+
             if not hasattr(psutil, "sensors_fans"):
                 return "N/A"
 
             fans = psutil.sensors_fans()
             if not fans:
-                return "N/A"
+                return "OEM Locked"
 
             first_fan_list = list(fans.values())[0]
             if first_fan_list:
                 return first_fan_list[0].current
 
-            return "N/A"
+            return "OEM Locked"
 
         except Exception:
-            return "N/A"
+            return "OEM Locked"
 
     def get_net_connections(self):
         """
