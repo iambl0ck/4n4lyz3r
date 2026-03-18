@@ -4,15 +4,11 @@ import time
 import collections
 import ipaddress
 import subprocess
-try:
-    import GPUtil
-    _HAS_GPUTIL = True
-except ImportError:
-    _HAS_GPUTIL = False
-
 import threading
+
 from models.native_os import NativePoller
 from models.health_analyzer import HardwareHealthAnalyzer
+from utils.helpers import run_hidden_subprocess
 
 # Constants for Active Threat Heuristics
 SUSPICIOUS_PATHS = [
@@ -62,9 +58,20 @@ class Model_4n4lyz3r:
             self.cached_specs["disk_total_gb"] = "N/A"
 
         # --- DYNAMIC DATA & MEMORY LEAK PREVENTION ---
-        # Historical arrays bounded by deque(maxlen)
+        # Historical arrays bounded by deque(maxlen=60) for Sparklines
         self.history_cpu = collections.deque(maxlen=60)
         self.history_ram = collections.deque(maxlen=60)
+        self.history_disk_r = collections.deque(maxlen=60)
+        self.history_disk_w = collections.deque(maxlen=60)
+        self.history_net_dl = collections.deque(maxlen=60)
+        self.history_net_ul = collections.deque(maxlen=60)
+
+        # Pre-fill deque to draw straight line sparklines at boot
+        for _ in range(60):
+            self.history_disk_r.append(0.0)
+            self.history_disk_w.append(0.0)
+            self.history_net_dl.append(0.0)
+            self.history_net_ul.append(0.0)
 
         # Disk IO state
         self.last_disk_io = psutil.disk_io_counters()
@@ -74,17 +81,18 @@ class Model_4n4lyz3r:
         self.last_net_io = psutil.net_io_counters()
         self.last_net_time = time.time()
 
-        # GPU State
-        self.has_gpu = _HAS_GPUTIL
-        if self.has_gpu:
-            try:
-                gpus = GPUtil.getGPUs()
-                if not gpus:
-                    self.has_gpu = False
-                else:
-                    self.cached_specs["gpu_total_mb"] = round(gpus[0].memoryTotal, 1)
-            except Exception:
-                self.has_gpu = False
+        # GPU State (using nvidia-smi explicitly for absolute control and NO popups)
+        self.has_gpu = False
+        try:
+            result = run_hidden_subprocess(['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader,nounits'], timeout=2)
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split(',')
+                if len(parts) >= 2:
+                    self.cached_specs["gpu_name"] = parts[0].strip()
+                    self.cached_specs["gpu_total_mb"] = float(parts[1].strip())
+                    self.has_gpu = True
+        except Exception:
+            self.has_gpu = False
 
     def _fetch_deep_health_analytics_daemon(self):
         """Asynchronously fetches deep hardware wear/tear and caches it."""
@@ -150,18 +158,24 @@ class Model_4n4lyz3r:
             self.last_disk_io = current_io
             self.last_disk_time = current_time
 
+            self.history_disk_r.append(round(read_speed_mb, 2))
+            self.history_disk_w.append(round(write_speed_mb, 2))
+
             return {
                 "percent": disk.percent,
                 "used_gb": round(used_gb, 2),
                 "total_gb": self.cached_specs.get("disk_total_gb", "N/A"),
                 "read_speed_mb": round(read_speed_mb, 2),
-                "write_speed_mb": round(write_speed_mb, 2)
+                "write_speed_mb": round(write_speed_mb, 2),
+                "history_r": list(self.history_disk_r),
+                "history_w": list(self.history_disk_w)
             }
         except Exception:
             return {
                 "percent": "N/A", "used_gb": "N/A",
                 "total_gb": self.cached_specs.get("disk_total_gb", "N/A"),
-                "read_speed_mb": "N/A", "write_speed_mb": "N/A"
+                "read_speed_mb": "N/A", "write_speed_mb": "N/A",
+                "history_r": list(self.history_disk_r), "history_w": list(self.history_disk_w)
             }
 
     def get_network_metrics(self):
@@ -184,31 +198,38 @@ class Model_4n4lyz3r:
             self.last_net_io = current_io
             self.last_net_time = current_time
 
+            self.history_net_dl.append(round(down_speed_mb, 2))
+            self.history_net_ul.append(round(up_speed_mb, 2))
+
             return {
                 "up_speed_mb": round(up_speed_mb, 2),
-                "down_speed_mb": round(down_speed_mb, 2)
+                "down_speed_mb": round(down_speed_mb, 2),
+                "history_dl": list(self.history_net_dl),
+                "history_ul": list(self.history_net_ul)
             }
         except Exception:
-            return {"up_speed_mb": "N/A", "down_speed_mb": "N/A"}
+            return {"up_speed_mb": "N/A", "down_speed_mb": "N/A", "history_dl": list(self.history_net_dl), "history_ul": list(self.history_net_ul)}
 
     def get_gpu_metrics(self):
-        """Returns GPU usage and VRAM stats if available."""
+        """Returns GPU usage and VRAM stats directly from nvidia-smi hiding console."""
         if not self.has_gpu:
-            return {"percent": "N/A", "memory_used": "N/A", "memory_total": "N/A"}
+            return {"percent": "N/A", "memory_used": "N/A", "memory_total": "N/A", "name": "GPU"}
 
         try:
-            gpus = GPUtil.getGPUs()
-            if gpus:
-                gpu = gpus[0]
-                return {
-                    "percent": round(gpu.load * 100, 1),
-                    "memory_used": round(gpu.memoryUsed, 1),
-                    "memory_total": self.cached_specs.get("gpu_total_mb", "N/A")
-                }
+            result = run_hidden_subprocess(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used', '--format=csv,noheader,nounits'], timeout=2)
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split(',')
+                if len(parts) >= 2:
+                    return {
+                        "percent": float(parts[0].strip()),
+                        "memory_used": float(parts[1].strip()),
+                        "memory_total": self.cached_specs.get("gpu_total_mb", "N/A"),
+                        "name": self.cached_specs.get("gpu_name", "GPU")
+                    }
         except Exception:
             pass
 
-        return {"percent": "N/A", "memory_used": "N/A", "memory_total": self.cached_specs.get("gpu_total_mb", "N/A")}
+        return {"percent": "N/A", "memory_used": "N/A", "memory_total": self.cached_specs.get("gpu_total_mb", "N/A"), "name": self.cached_specs.get("gpu_name", "GPU")}
 
     def get_battery_metrics(self):
         """Returns battery percentage, plugged status, and time left."""
@@ -262,6 +283,18 @@ class Model_4n4lyz3r:
     def get_temperatures(self):
         """Attempts to fetch hardware temperatures."""
         try:
+            if self.os_platform == 'Windows':
+                try:
+                    # MSAcpi_ThermalZoneTemperature is in tenths of Kelvin
+                    output = run_hidden_subprocess(['wmic', '/namespace:\\\\root\\wmi', 'PATH', 'MSAcpi_ThermalZoneTemperature', 'get', 'CurrentTemperature'], timeout=2)
+                    if output.returncode == 0:
+                        lines = [l.strip() for l in output.stdout.split('\n') if l.strip()]
+                        if len(lines) > 1 and lines[1].isdigit():
+                            celsius = (int(lines[1]) / 10.0) - 273.15
+                            return round(celsius, 1)
+                except Exception:
+                    pass
+
             if not hasattr(psutil, "sensors_temperatures"):
                 return "N/A"
 
@@ -371,17 +404,24 @@ class Model_4n4lyz3r:
         try:
             if self.os_platform == 'Windows':
                 # Windows WMIC hooks for BIOS and BaseBoard
-                bios = subprocess.check_output(['wmic', 'bios', 'get', 'manufacturer,smbiosbiosversion'], shell=True, text=True).split('\n')[1].strip()
-                mb = subprocess.check_output(['wmic', 'baseboard', 'get', 'manufacturer,product'], shell=True, text=True).split('\n')[1].strip()
-                specs["bios"] = bios if bios else "N/A"
-                specs["motherboard"] = mb if mb else "N/A"
+                bios_res = run_hidden_subprocess(['wmic', 'bios', 'get', 'manufacturer,smbiosbiosversion'], timeout=3)
+                if bios_res.returncode == 0:
+                    bios_lines = [l.strip() for l in bios_res.stdout.split('\n') if l.strip()]
+                    specs["bios"] = bios_lines[1] if len(bios_lines) > 1 else "N/A"
+
+                mb_res = run_hidden_subprocess(['wmic', 'baseboard', 'get', 'manufacturer,product'], timeout=3)
+                if mb_res.returncode == 0:
+                    mb_lines = [l.strip() for l in mb_res.stdout.split('\n') if l.strip()]
+                    specs["motherboard"] = mb_lines[1] if len(mb_lines) > 1 else "N/A"
 
                 # Windows Disk Drives basic via WMIC
-                disks = subprocess.check_output(['wmic', 'diskdrive', 'get', 'model,status'], shell=True, text=True).strip().split('\n')[1:]
-                for d in disks:
-                    d_clean = d.strip()
-                    if d_clean:
-                        specs["disks"].append(d_clean)
+                disks_res = run_hidden_subprocess(['wmic', 'diskdrive', 'get', 'model,status'], timeout=3)
+                if disks_res.returncode == 0:
+                    disks = disks_res.stdout.strip().split('\n')[1:]
+                    for d in disks:
+                        d_clean = d.strip()
+                        if d_clean:
+                            specs["disks"].append(d_clean)
 
             elif self.os_platform == 'Linux':
                 # Read /sys/class/dmi/id for native DMI tables (requires some read permissions, might fallback)
@@ -399,10 +439,12 @@ class Model_4n4lyz3r:
                 # Fetch S.M.A.R.T. data using smartctl if available
                 try:
                     # lsblk to get disks
-                    lsblk = subprocess.check_output(['lsblk', '-nd', '-o', 'NAME,MODEL'], text=True).strip().split('\n')
-                    for line in lsblk:
-                        if line:
-                            specs["disks"].append(line.strip())
+                    lsblk_res = run_hidden_subprocess(['lsblk', '-nd', '-o', 'NAME,MODEL'], timeout=3)
+                    if lsblk_res.returncode == 0:
+                        lsblk = lsblk_res.stdout.strip().split('\n')
+                        for line in lsblk:
+                            if line:
+                                specs["disks"].append(line.strip())
                 except Exception:
                     pass
         except Exception:
