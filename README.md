@@ -43,6 +43,8 @@ Built for System Administrators, Security Researchers, and Power Users who deman
 *   **🧠 Zero Memory Leaks:** Employs extreme static caching (fetching hardware capacities only once) and strict bounded `collections.deque` histories to guarantee the RAM footprint never expands over time. Explicit `gc.collect()` triggers ensure pristine memory hygiene.
 *   **🚨 Smart Alert System:** In-app sliding CustomTkinter toast notifications trigger on high CPU (>90%), RAM (>95%), and Core Temp (>85°C) with strict 5-minute cooldowns to prevent spam.
 *   **📝 Background Event Logger:** Asynchronous, non-blocking `RotatingFileHandler` (max 5MB) quietly logs anomalies to disk without freezing the UI.
+*   **🛰️ Fleet Management (Secure REST API):** A zero-dependency `http.server` daemon serves a read-only `/api/health` endpoint on port 40404. Secured via a randomly generated `Authorization: Bearer` API key, allowing the main UI to monitor remote "4n4lyz3r" nodes asynchronously.
+*   **🤖 AI-Powered Threat Intelligence:** Includes an "Analyze with AI" audit engine that feeds the system report snapshot directly to OpenAI's API. Bypasses heavy Python SDKs by using raw `urllib.request` REST calls, ensuring a massive LLM diagnostic capability with absolute zero executable bloat.
 
 ---
 
