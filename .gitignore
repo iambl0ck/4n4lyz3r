@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+*.log
+/build/
+/dist/
+*.spec
+4n4lyz3r_config.json
